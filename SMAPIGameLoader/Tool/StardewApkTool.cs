@@ -120,15 +120,15 @@ internal static class StardewApkTool
             switch (CurrentPackageInfo.PackageName)
             {
                 case GamePlayStorePackageName:
-                    return new(1, 6, 15, 0);
+                    return new(1, 6, 15, 3);
                 case GameGalaxyStorePackageName:
-                    return new(1, 6, 14, 8);
+                    return new(1, 6, 15, 3);
                 default:
                     return null;
             }
         }
     }
-    public static Version CurrentGameVersion 
+    public static Version CurrentGameVersion
     {
         get
         {
@@ -136,9 +136,9 @@ internal static class StardewApkTool
             {
                 return new Version(CurrentPackageInfo?.VersionName);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                return new Version(0,0,0,0);
+                return new Version(0, 0, 0, 0);
             }
         }
     }
