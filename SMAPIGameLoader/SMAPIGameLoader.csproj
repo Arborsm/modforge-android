@@ -2,7 +2,8 @@
 	<PropertyGroup>
 		<TargetFramework>net9.0-android</TargetFramework>
 		<OutputType>Exe</OutputType>
-		<ApplicationId>com.companyname.SMAPIGameLoader</ApplicationId>
+		<!-- ModForge fork package id; mods live under Android/data/com.modforge.android/files/Mods -->
+		<ApplicationId>com.modforge.android</ApplicationId>
 		<SupportedOSPlatformVersion>28.0</SupportedOSPlatformVersion>
 		<AndroidSigningKeyStore>debug.keystore</AndroidSigningKeyStore>
 		<PackageIcon>icon.png</PackageIcon>
@@ -48,6 +49,7 @@
 		<PackageReference Include="SkiaSharp" Version="2.88.9" />
 		<PackageReference Include="System.IO.Compression" Version="4.3.0" />
 		<PackageReference Include="Xamarin.AndroidX.AppCompat" Version="1.7.0.4" />
+		<PackageReference Include="Xamarin.AndroidX.WebKit" Version="1.8.0.3" />
 		<PackageReference Include="Xamarin.Essentials" Version="1.7.7" />
 
 	</ItemGroup>
