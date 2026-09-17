@@ -302,6 +302,9 @@ public sealed partial class NexusService
             if (cached is not null)
                 return JsonSerializer.SerializeToElement(cached, LauncherJsonContext.Default.NexusResolveImageResult);
 
+            if (!string.IsNullOrEmpty(req.ModKey) && ImageBlockedForMod(req.ModKey!))
+                throw new LauncherCommandException("blocked", $"Launcher image loading is disabled for mod {req.ModKey} after repeated failures.");
+
             try
             {
                 using var response = await NexusClient.GetAsync(url, CancellationToken.None).ConfigureAwait(false);
@@ -377,6 +380,38 @@ public sealed partial class NexusService
 
             return (JsonElement?)null;
         });
+    }
+
+    /// <summary>Reads the image-failures state the front-end maintains; blocked mods skip fetching.</summary>
+    static bool ImageBlockedForMod(string modKey)
+    {
+        try
+        {
+            var path = Path.Combine(FileTool.ExternalFilesDir, "ModForge", "launcher", "image-failures.json");
+            if (!File.Exists(path))
+                return false;
+
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            if (!document.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+                return false;
+
+            foreach (var entry in entries.EnumerateArray())
+            {
+                var entryKey = NexusJson.Str(entry, "modKey");
+                if (entryKey is not null
+                    && entryKey.Equals(modKey, StringComparison.OrdinalIgnoreCase)
+                    && (NexusJson.Bool(entry, "blocked") ?? false))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        return false;
     }
 
     static NexusResolveImageResult? FindCachedImage(string url)

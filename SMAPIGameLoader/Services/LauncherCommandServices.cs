@@ -38,6 +38,7 @@ public sealed class LauncherCommandServices
     public required SmapiService Smapi { get; init; }
     public required ModConfigService ModConfig { get; init; }
     public required NexusService Nexus { get; init; }
+    public required NexusSso Sso { get; init; }
 
     /// <summary>Shared instance backing the WebView bridge; services are stateless apart from file caches.</summary>
     public static LauncherCommandServices Loaded { get; } = CreateDefault();
@@ -50,5 +51,6 @@ public sealed class LauncherCommandServices
         Smapi = new SmapiService(),
         ModConfig = new ModConfigService(),
         Nexus = new NexusService(),
+        Sso = new NexusSso(),
     };
 }

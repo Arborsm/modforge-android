@@ -202,6 +202,22 @@ public sealed class NexusValidateApiKeyResult
     public long? HourlyResetAt { get; set; }
 }
 
+public sealed class SsoSnapshot
+{
+    public string Status { get; set; } = "idle";
+    public string? ErrorKind { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? UserName { get; set; }
+    public bool IsPremium { get; set; }
+    public string? SsoId { get; set; }
+}
+
+public sealed class SsoStartResult
+{
+    public string SsoId { get; set; } = string.Empty;
+    public string Status { get; set; } = "connecting";
+}
+
 // --- REST v1 payloads (snake_case upstream) ---
 
 public sealed class NexusRestFile

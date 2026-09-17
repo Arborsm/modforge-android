@@ -53,10 +53,15 @@ public sealed partial class NexusService
             var installedSmapiVersion = LibraryService.ResolveInstalledSmapiVersion() ?? "4.0.0";
             var scan = new LibraryService().ScanLibraryAtPath(modsPath);
 
+            var suppressedIds = forceRefresh
+                ? new HashSet<long>()
+                : LoadSuppressedIdSet(cache);
+
             var candidates = scan.Mods
                 .Where(mod => mod.NexusModId is > 0 && mod.Version is not null)
                 .GroupBy(mod => mod.NexusModId!.Value)
                 .Select(group => group.First())
+                .Where(mod => !suppressedIds.Contains(mod.NexusModId!.Value))
                 .Select(mod => new UpdateCandidate(mod.NexusModId!.Value, mod.UniqueId ?? string.Empty, mod.Name, mod.Version!, mod.AbsolutePath, mod.UpdateKeys ?? new List<string>()))
                 .ToList();
 
@@ -72,8 +77,12 @@ public sealed partial class NexusService
                 {
                     checkedCount += 1;
                     if (!remoteByModId.TryGetValue(candidate.ModId, out var remote))
+                    {
+                        RecordAutoFailure(cacheKey, candidate.ModId, forceRefresh);
                         continue;
+                    }
 
+                    ClearAutoFailure(cacheKey, candidate.ModId);
                     resolvedIds.Add(candidate.ModId);
                     if (!LauncherJsonHelper.VersionIsNewer(candidate.CurrentVersion, remote.Version))
                         continue;
@@ -274,6 +283,80 @@ public sealed partial class NexusService
 
     // --- updates cache persistence (entries keyed by logical mods path) ---
 
+    const int AutoFailureSuppressionThreshold = 3;
+
+    static HashSet<long> LoadSuppressedIdSet(JsonElement cache)
+    {
+        var suppressed = new HashSet<long>();
+        if (cache.ValueKind == JsonValueKind.Object && cache.TryGetProperty("autoFailures", out var failures) && failures.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var perPath in failures.EnumerateObject())
+            {
+                if (perPath.Value.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                foreach (var failureEntry in perPath.Value.EnumerateObject())
+                {
+                    var modId = NexusJson.Num(failureEntry.Value, "modId") ?? 0;
+                    var failureCount = NexusJson.Num(failureEntry.Value, "failureCount") ?? 0;
+                    if (modId > 0 && failureCount >= AutoFailureSuppressionThreshold)
+                        suppressed.Add(modId);
+                }
+            }
+        }
+
+        return suppressed;
+    }
+
+    void RecordAutoFailure(string cacheKey, long modId, bool forceRefresh)
+    {
+        if (forceRefresh)
+            return;
+
+        try
+        {
+            var cache = JsonNode.Parse(LoadUpdatesCache().GetRawText()) as JsonObject ?? new JsonObject();
+            var failures = cache["autoFailures"] as JsonObject ?? new JsonObject();
+            var perPath = failures[cacheKey] as JsonObject ?? new JsonObject();
+            var entry = perPath[modId.ToString()] as JsonObject ?? new JsonObject();
+            var failureCount = (NexusJson.Num(JsonSerializer.SerializeToElement(entry), "failureCount") ?? 0) + 1;
+            entry["modId"] = modId;
+            entry["failureCount"] = failureCount;
+            entry["lastFailedAtMs"] = LauncherJsonHelper.CurrentTimestampMs();
+            entry["lastError"] = "All remote update detail fallbacks failed.";
+            perPath[modId.ToString()] = entry;
+            failures[cacheKey] = perPath;
+            cache["autoFailures"] = failures;
+            LauncherJsonHelper.WriteJsonFile(UpdatesCacheFilePath, cache);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("NexusService: auto failure record failed: " + ex.Message);
+        }
+    }
+
+    void ClearAutoFailure(string cacheKey, long modId)
+    {
+        try
+        {
+            var cache = JsonNode.Parse(LoadUpdatesCache().GetRawText()) as JsonObject ?? new JsonObject();
+            if (cache["autoFailures"] is not JsonObject failures || failures[cacheKey] is not JsonObject perPath)
+                return;
+
+            perPath.Remove(modId.ToString());
+            if (perPath.Count == 0)
+                failures.Remove(cacheKey);
+            else
+                failures[cacheKey] = perPath;
+            cache["autoFailures"] = failures;
+            LauncherJsonHelper.WriteJsonFile(UpdatesCacheFilePath, cache);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("NexusService: auto failure clear failed: " + ex.Message);
+        }
+    }
+
     static string LogicalPathKey(string modsPath)
     {
         var key = modsPath.Trim().Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
@@ -381,10 +464,11 @@ public sealed partial class NexusService
             if (modsPath.Length == 0)
                 throw new LauncherCommandException("invalid_args", "modsPath is required.");
 
+            var cache = LoadUpdatesCache();
             var result = new NexusSuppressedUpdateModIdsResult
             {
                 ModsPath = modsPath,
-                ModIds = new List<long>(),
+                ModIds = LoadSuppressedIdSet(cache).OrderBy(id => id).ToList(),
             };
             return JsonSerializer.SerializeToElement(result, LauncherJsonContext.Default.NexusSuppressedUpdateModIdsResult);
         });

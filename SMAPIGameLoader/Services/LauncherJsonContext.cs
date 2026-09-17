@@ -53,6 +53,8 @@ namespace SMAPIGameLoader.Services;
 [JsonSerializable(typeof(NexusDownloadRequest))]
 [JsonSerializable(typeof(NexusResolveImageRequest))]
 [JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
+[JsonSerializable(typeof(SsoSnapshot))]
+[JsonSerializable(typeof(SsoStartResult))]
 internal sealed partial class LauncherJsonContext : JsonSerializerContext
 {
 }

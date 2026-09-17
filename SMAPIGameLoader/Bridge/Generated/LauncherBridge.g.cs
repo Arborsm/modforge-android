@@ -185,6 +185,12 @@ public static class LauncherBridgeGenerated
             }
             case "validate_nexus_api_key":
                 return await services.Nexus.ValidateNexusApiKeyAsync().ConfigureAwait(false);
+            case "start_nexus_sso":
+                return await services.Sso.StartNexusSsoAsync().ConfigureAwait(false);
+            case "get_nexus_sso_status":
+                return await services.Sso.GetNexusSsoStatusAsync().ConfigureAwait(false);
+            case "cancel_nexus_sso":
+                return await services.Sso.CancelNexusSsoAsync().ConfigureAwait(false);
             default:
                 throw new LauncherCommandUnavailableException(command);
         }

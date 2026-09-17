@@ -71,22 +71,97 @@ internal static class LauncherJsonHelper
         }
         catch (Exception)
         {
-            return null;
+            try
+            {
+                using var document = JsonDocument.Parse(SanitizeRelaxedJson(File.ReadAllText(path)));
+                return document.RootElement.Clone();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
     }
 
-    /// <summary>Parses a JSON file, throwing a command exception on invalid JSON (read_json_file semantics).</summary>
+    /// <summary>
+    ///     Parses a JSON file, throwing a command exception on invalid JSON. Falls back to
+    ///     the desktop json_relaxed sanitization (comments, trailing commas) before failing.
+    /// </summary>
     public static JsonElement ParseJsonFile(string path)
     {
+        var text = File.ReadAllText(path);
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            using var document = JsonDocument.Parse(text);
             return document.RootElement.Clone();
         }
-        catch (Exception ex)
+        catch (Exception strictError)
         {
-            throw new LauncherCommandException("invalid_json", $"Failed to parse JSON file {path}: {ex.Message}");
+            try
+            {
+                using var document = JsonDocument.Parse(SanitizeRelaxedJson(text));
+                return document.RootElement.Clone();
+            }
+            catch (Exception)
+            {
+                throw new LauncherCommandException("invalid_json", $"Failed to parse JSON file {path}: {strictError.Message}; relaxed parse also failed");
+            }
         }
+    }
+
+    /// <summary>Strips comments and trailing commas (json_relaxed.rs core rules).</summary>
+    public static string SanitizeRelaxedJson(string text)
+    {
+        if (text.StartsWith('\uFEFF'))
+            text = text[1..];
+
+        var builder = new StringBuilder(text.Length);
+        var inString = false;
+        var escaped = false;
+        for (var index = 0; index < text.Length; index += 1)
+        {
+            var character = text[index];
+            if (inString)
+            {
+                builder.Append(character);
+                if (escaped)
+                    escaped = false;
+                else if (character == '\\')
+                    escaped = true;
+                else if (character == '"')
+                    inString = false;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                inString = true;
+                builder.Append(character);
+                continue;
+            }
+
+            if (character == '/' && index + 1 < text.Length && text[index + 1] == '/')
+            {
+                while (index < text.Length && text[index] != '\n')
+                    index += 1;
+                builder.Append('\n');
+                continue;
+            }
+
+            if (character == '/' && index + 1 < text.Length && text[index + 1] == '*')
+            {
+                var blockEnd = text.IndexOf("*/", index + 2, StringComparison.Ordinal);
+                index = blockEnd < 0 ? text.Length : blockEnd + 1;
+                continue;
+            }
+
+            builder.Append(character);
+        }
+
+        //trailing commas
+        var result = builder.ToString();
+        result = new System.Text.RegularExpressions.Regex(",(\\s*[}\\]])").Replace(result, "$1");
+        return result;
     }
 
     /// <summary>Writes pretty JSON with the trailing newline the desktop domain writes.</summary>
