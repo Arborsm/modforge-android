@@ -251,18 +251,20 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
         public WebResourceResponse Handle(string url)
         {
-            var path = Android.Net.Uri.Parse(url)?.Path ?? "/";
+            var path = RequestPathFromUrl(url);
             if (path == "/")
                 path = "/index.html";
 
+            var assetPath = AssetRoot + path;
             try
             {
-                var stream = _activity.Assets!.Open(AssetRoot + path);
+                var stream = _activity.Assets!.Open(assetPath);
                 return new WebResourceResponse(GuessMime(path), GuessEncoding(path), stream);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return NotFoundResponse();
+                Console.WriteLine($"WwwAssetPathHandler: asset miss url='{url}' asset='{assetPath}': {ex}");
+                return NotFoundResponse(assetPath);
             }
         }
     }
@@ -281,22 +283,23 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
         public WebResourceResponse Handle(string url)
         {
-            var path = Android.Net.Uri.Parse(url)?.Path ?? string.Empty;
+            var path = RequestPathFromUrl(url);
             if (path.StartsWith(_prefix) is false)
-                return NotFoundResponse();
+                return NotFoundResponse(path);
 
             var filePath = path[_prefix.Length..];
             if (SandboxFileTool.IsInsideAppSandbox(_activity, filePath) is false)
-                return NotFoundResponse();
+                return NotFoundResponse(filePath);
 
             try
             {
                 var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 return new WebResourceResponse(GuessMime(filePath), GuessEncoding(filePath), stream);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return NotFoundResponse();
+                Console.WriteLine($"SandboxFilePathHandler: file miss url='{url}' path='{filePath}': {ex}");
+                return NotFoundResponse(filePath);
             }
         }
     }
@@ -318,10 +321,11 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
         public WebResourceResponse Handle(string url)
         {
-            var segments = new List<string>(Android.Net.Uri.Parse(url)?.PathSegments ?? (IList<string>)Array.Empty<string>());
+            var segments = new List<string>(Android.Net.Uri.Parse(RequestPathFromUrl(url))?.PathSegments
+                ?? (IList<string>)Array.Empty<string>());
             //segments[0] is the registered "plugins" prefix.
             if (segments.Count < 2)
-                return NotFoundResponse();
+                return NotFoundResponse(url ?? "empty");
 
             segments.RemoveAt(0);
             //strip the optional __v<N> hot-reload cache-buster segment after the plugin id
@@ -332,16 +336,17 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             var root = Path.Combine(_activity.GetExternalFilesDir(null)?.AbsolutePath ?? string.Empty, PluginsDirName);
             var filePath = Path.GetFullPath(Path.Combine(root, relativePath));
             if (SandboxFileTool.IsInsideAppSandbox(_activity, filePath) is false)
-                return NotFoundResponse();
+                return NotFoundResponse(relativePath);
 
             try
             {
                 var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 return new WebResourceResponse(GuessMime(relativePath), GuessEncoding(relativePath), stream);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return NotFoundResponse();
+                Console.WriteLine($"PluginPathHandler: file miss url='{url}' path='{filePath}': {ex}");
+                return NotFoundResponse(relativePath);
             }
         }
     }
@@ -364,9 +369,37 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         }
     }
 
-    internal static WebResourceResponse NotFoundResponse()
+    /// <summary>
+    ///     Extracts the decoded request path from the string the WebKit binding hands to
+    ///     IPathHandler; accepts a full URL, an absolute path or a bare relative target.
+    /// </summary>
+    internal static string RequestPathFromUrl(string? url)
     {
-        var body = Encoding.UTF8.GetBytes("not found");
+        if (string.IsNullOrEmpty(url))
+            return "/";
+
+        var path = url!;
+        if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/android_asset", StringComparison.OrdinalIgnoreCase))
+        {
+            path = Android.Net.Uri.Parse(path)?.Path ?? path;
+        }
+        else if (!path.StartsWith("/", StringComparison.Ordinal))
+        {
+            path = "/" + path;
+        }
+
+        var cut = path.IndexOfAny(new[] { '?', '#' });
+        if (cut >= 0)
+            path = path[..cut];
+
+        return path;
+    }
+
+    internal static WebResourceResponse NotFoundResponse(string detail)
+    {
+        var body = Encoding.UTF8.GetBytes("not found: " + detail);
         return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, new MemoryStream(body));
     }
 
