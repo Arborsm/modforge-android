@@ -81,6 +81,79 @@ public static class LauncherBridgeGenerated
                 var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.SaveLauncherModConfigParams);
                 return await services.ModConfig.SaveLauncherModConfigAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
             }
+            case "load_launcher_download_queue":
+                return await services.Nexus.LoadLauncherDownloadQueueAsync().ConfigureAwait(false);
+            case "save_launcher_download_queue":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.SaveLauncherDownloadQueueParams);
+                return await services.Nexus.SaveLauncherDownloadQueueAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "download_launcher_mod":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.DownloadLauncherModParams);
+                return await services.Nexus.DownloadLauncherModAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "cancel_launcher_download":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.CancelLauncherDownloadParams);
+                return await services.Nexus.CancelLauncherDownloadAsync(envelope.DownloadId).ConfigureAwait(false);
+            }
+            case "search_launcher_catalog":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.SearchLauncherCatalogParams);
+                return await services.Nexus.SearchLauncherCatalogAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "load_launcher_remote_mod_detail":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.LoadLauncherRemoteModDetailParams);
+                return await services.Nexus.LoadLauncherRemoteModDetailAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "load_launcher_update_changelog":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.LoadLauncherUpdateChangelogParams);
+                return await services.Nexus.LoadLauncherUpdateChangelogAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "resolve_launcher_image":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.ResolveLauncherImageParams);
+                return await services.Nexus.ResolveLauncherImageAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "resolve_cached_launcher_image":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.ResolveCachedLauncherImageParams);
+                return await services.Nexus.ResolveCachedLauncherImageAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "clear_launcher_image_cache":
+                return await services.Nexus.ClearLauncherImageCacheAsync().ConfigureAwait(false);
+            case "load_launcher_nexus_diagnostics":
+                return await services.Nexus.LoadLauncherNexusDiagnosticsAsync().ConfigureAwait(false);
+            case "restart_launcher_nexus_diagnostics":
+                return await services.Nexus.RestartLauncherNexusDiagnosticsAsync().ConfigureAwait(false);
+            case "retry_launcher_nexus_diagnostics_route":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.RetryLauncherNexusDiagnosticsRouteParams);
+                return await services.Nexus.RetryLauncherNexusDiagnosticsRouteAsync(envelope.RouteId).ConfigureAwait(false);
+            }
+            case "set_launcher_nexus_force_offline":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.SetLauncherNexusForceOfflineParams);
+                return await services.Nexus.SetLauncherNexusForceOfflineAsync(envelope.ForceOffline).ConfigureAwait(false);
+            }
+            case "load_cached_launcher_updates":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.LoadCachedLauncherUpdatesParams);
+                return await services.Nexus.LoadCachedLauncherUpdatesAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "load_suppressed_launcher_update_mod_ids":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.LoadSuppressedLauncherUpdateModIdsParams);
+                return await services.Nexus.LoadSuppressedLauncherUpdateModIdsAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
+            case "check_launcher_updates":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.CheckLauncherUpdatesParams);
+                return await services.Nexus.CheckLauncherUpdatesAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
             case "check_smapi_update":
                 return await services.Smapi.CheckSmapiUpdateAsync().ConfigureAwait(false);
             case "install_smapi_update":
@@ -110,6 +183,8 @@ public static class LauncherBridgeGenerated
                 var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.InspectLauncherArchiveParams);
                 return await services.Install.InspectLauncherArchiveAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
             }
+            case "validate_nexus_api_key":
+                return await services.Nexus.ValidateNexusApiKeyAsync().ConfigureAwait(false);
             default:
                 throw new LauncherCommandUnavailableException(command);
         }
