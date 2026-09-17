@@ -75,6 +75,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             .AddPathHandler("/plugins/", new PluginPathHandler(this))
             .Build();
 
+        //Remote WebView debugging (chrome://inspect + CDP) for launcher bring-up.
+        WebView.SetWebContentsDebuggingEnabled(true);
+
         _webView = new WebView(this)
         {
             LayoutParameters = new Android.Views.ViewGroup.LayoutParams(
@@ -254,6 +257,12 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             var path = RequestPathFromUrl(url);
             if (path == "/")
                 path = "/index.html";
+
+            //The asset loader routes bare-path local-file/plugins requests here; re-dispatch.
+            if (path.StartsWith("/local-file/", StringComparison.Ordinal))
+                return new SandboxFilePathHandler(_activity, "/local-file/").Handle(url);
+            if (path.StartsWith("/plugins/", StringComparison.Ordinal))
+                return new PluginPathHandler(_activity).Handle(url);
 
             var assetPath = AssetRoot + path;
             try

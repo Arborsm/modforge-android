@@ -96,7 +96,7 @@ public sealed class InstallService
             var stagedRoot = Path.Combine(workRoot, "staged");
             try
             {
-                ExpandZipArchive(archivePath, stagedRoot);
+                ExpandArchive(archivePath, stagedRoot);
             }
             catch (Exception ex) when (ex is not LauncherCommandException)
             {
@@ -648,6 +648,46 @@ public sealed class InstallService
 
     // --- zip extraction ---
 
+    /// <summary>
+    ///     Expands an archive under destination with the desktop entry-path sanitization
+    ///     rules: zip via System.IO.Compression, 7z/rar/tar/tar.gz via SharpCompress
+    ///     (the desktop multi-format support, now on Android too).
+    /// </summary>
+    static void ExpandArchive(string archivePath, string destination)
+    {
+        var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+        var lowerName = archivePath.ToLowerInvariant();
+        if (extension == ".zip" || (!lowerName.EndsWith(".tar.gz") && !lowerName.EndsWith(".tgz") && extension != ".7z" && extension != ".rar" && extension != ".tar"))
+        {
+            ExpandZipArchive(archivePath, destination);
+            return;
+        }
+
+        ExpandWithSharpCompress(archivePath, destination);
+    }
+
+    static void ExpandWithSharpCompress(string archivePath, string destination)
+    {
+        using var stream = File.OpenRead(archivePath);
+        using var reader = SharpCompress.Readers.ReaderFactory.Open(stream);
+        while (reader.MoveToNextEntry())
+        {
+            var entry = reader.Entry;
+            var relativePath = SanitizeArchiveEntryPath(archivePath, entry.Key ?? string.Empty);
+            var outputPath = Path.Combine(destination, relativePath);
+            if (entry.IsDirectory)
+            {
+                Directory.CreateDirectory(outputPath);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            using var entryStream = reader.OpenEntryStream();
+            using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            entryStream.CopyTo(outputStream);
+        }
+    }
+
     /// <summary>Expands a zip archive under destination with the desktop entry-path sanitization rules.</summary>
     static void ExpandZipArchive(string archivePath, string destination)
     {
@@ -722,7 +762,7 @@ public sealed class InstallService
         try
         {
             var extractedRoot = Path.Combine(workRoot, "payload");
-            ExpandZipArchive(archivePath, extractedRoot);
+            ExpandArchive(archivePath, extractedRoot);
 
             var totalEntries = 0L;
             var totalFiles = 0L;

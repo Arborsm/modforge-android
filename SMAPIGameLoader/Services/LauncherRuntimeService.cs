@@ -203,6 +203,22 @@ public sealed class LauncherRuntimeService
         return settings;
     }
 
+    /// <summary>Persists an authorized Nexus API key (SSO completion path).</summary>
+    public static void SetNexusApiKey(string apiKey)
+    {
+        var settings = LoadOrCreateSettings();
+        settings.NexusApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
+        WriteSettings(settings);
+    }
+
+    /// <summary>Persists the debug force-offline override in the settings file (app_ui launcher slice).</summary>
+    public static void SetNexusForceOfflinePreference(bool forceOffline)
+    {
+        var settings = LoadOrCreateSettings();
+        settings.ForceOffline = forceOffline;
+        WriteSettings(settings);
+    }
+
     static LauncherSettings NormalizeSettings(LauncherSettings settings)
     {
         settings.GamePath = NormalizeOptionalPath(settings.GamePath);

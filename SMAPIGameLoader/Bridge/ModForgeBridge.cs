@@ -98,6 +98,9 @@ public sealed class ModForgeBridge : Java.Lang.Object
             case CreateDocumentCommand:
                 return await CreateDocumentAsync(args).ConfigureAwait(false);
             default:
+                if (BootstrapCommands.Handles(pending.Command))
+                    return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
                 return await DispatchLauncherCommandAsync(pending.Command, args).ConfigureAwait(false);
         }
     }

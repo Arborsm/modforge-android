@@ -20,6 +20,9 @@ public sealed class LauncherSettings
     public bool AutoCheckModUpdates { get; set; } = true;
     public bool GmcmParsingEnabled { get; set; } = true;
     public bool ShowConsoleWindow { get; set; }
+
+    /// <summary>Android-side debug override for Nexus diagnostics; not part of the desktop contract.</summary>
+    public bool ForceOffline { get; set; }
 }
 
 /// <summary>Save request merge rules mirror the desktop protocol: absent/null means keep the current value.</summary>
@@ -465,6 +468,72 @@ public sealed class SmapiInstallerDownloadCandidate
 public sealed class FindSmapiInstallerDownloadsResult
 {
     public List<SmapiInstallerDownloadCandidate> Candidates { get; set; } = new();
+}
+
+// --- Nexus request payloads ---
+
+public sealed class NexusSearchRequest
+{
+    public string? Query { get; set; }
+    public string? TitleQuery { get; set; }
+    public string? DescriptionQuery { get; set; }
+    public string? AuthorQuery { get; set; }
+    public string? UploaderQuery { get; set; }
+    public long? Page { get; set; }
+    public long? PageSize { get; set; }
+    public string? TimeRange { get; set; }
+    public string? Sort { get; set; }
+    public string? Category { get; set; }
+    public string? Language { get; set; }
+    public string? TagsInclude { get; set; }
+    public string? TagsExclude { get; set; }
+    public bool? Ascending { get; set; }
+    public bool? IncludeAdult { get; set; }
+    public long? MinFileSize { get; set; }
+    public long? MaxFileSize { get; set; }
+    public long? MinDownloads { get; set; }
+    public long? MaxDownloads { get; set; }
+    public long? MinEndorsements { get; set; }
+    public long? MaxEndorsements { get; set; }
+}
+
+public sealed class NexusDetailRequest
+{
+    public long ModId { get; set; }
+    public bool? IncludeFiles { get; set; }
+}
+
+public sealed class NexusChangelogRequest
+{
+    public long ModId { get; set; }
+}
+
+public sealed class NexusCheckUpdatesRequest
+{
+    public string? ModsPath { get; set; }
+    public bool? ForceRefresh { get; set; }
+    public string? SessionId { get; set; }
+}
+
+public sealed class NexusCachedUpdatesRequest
+{
+    public string? ModsPath { get; set; }
+}
+
+public sealed class NexusDownloadRequest
+{
+    public string? DownloadId { get; set; }
+    public long? ModId { get; set; }
+    public long? FileId { get; set; }
+    public string? Version { get; set; }
+    public string? Title { get; set; }
+}
+
+public sealed class NexusResolveImageRequest
+{
+    public string? Url { get; set; }
+    public bool? Refresh { get; set; }
+    public string? ModKey { get; set; }
 }
 
 // --- internal persistence models (metadata.json for install backups) ---
