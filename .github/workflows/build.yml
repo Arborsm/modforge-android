@@ -60,7 +60,6 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 11.5.1
-          working-directory: modforge-studio
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -95,8 +94,11 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" >/dev/null
 
-      - name: Restore .NET dependencies
-        run: dotnet restore SMAPIGameLoader/SMAPIGameLoader.csproj
+      # -r android-arm64 forces the Mono runtime pack (incl. libmonosgen-2.0.so)
+      # into the local dotnet pack store so the reflection-unlock patch that
+      # follows can overwrite it before the APK build embeds it.
+      - name: Restore .NET dependencies (downloads the Mono runtime pack)
+        run: dotnet restore SMAPIGameLoader/SMAPIGameLoader.csproj -r android-arm64
 
       - name: Patch Mono runtime with reflection unlock (SharedLibs custom libmonosgen)
         run: |
