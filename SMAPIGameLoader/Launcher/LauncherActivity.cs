@@ -1,3 +1,6 @@
+using Android.App;
+using Android.Content.PM;
+using Android.OS;
 using Android.Webkit;
 using AndroidX.WebKit;
 using SMAPIGameLoader.Bridge;
@@ -84,7 +87,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         settings.AllowFileAccess = false;
         settings.CacheMode = CacheModes.Default;
         _webView.SetWebViewClient(new AssetLoaderWebViewClient(_assetLoader));
-        _bridge = new ModForgeBridge(this, _webView);
+        _bridge = new ModForgeBridge(this);
         _webView.AddJavascriptInterface(_bridge, "modforgeBridge");
 
         SetContentView(_webView);
@@ -130,7 +133,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             try
             {
                 var intent = new Android.Content.Intent(Android.Content.Intent.ActionOpenDocument);
-                intent.AddCategory(Android.Content.Category.Openable);
+                intent.AddCategory(Android.Content.Intent.CategoryOpenable);
                 intent.SetType("*/*");
                 intent.PutExtra(Android.Content.Intent.ExtraAllowMultiple, multiple);
                 StartActivityForResult(intent, PickFileRequestCode);
@@ -175,7 +178,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             try
             {
                 var intent = new Android.Content.Intent(Android.Content.Intent.ActionCreateDocument);
-                intent.AddCategory(Android.Content.Category.Openable);
+                intent.AddCategory(Android.Content.Intent.CategoryOpenable);
                 intent.SetType(string.IsNullOrWhiteSpace(mimeType) ? "application/octet-stream" : mimeType);
                 intent.PutExtra(Android.Content.Intent.ExtraTitle, displayName);
                 StartActivityForResult(intent, CreateDocumentRequestCode);
@@ -246,9 +249,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             _activity = activity;
         }
 
-        public WebResourceResponse Handle(Uri url)
+        public WebResourceResponse Handle(string url)
         {
-            var path = url.Path ?? "/";
+            var path = Android.Net.Uri.Parse(url)?.Path ?? "/";
             if (path == "/")
                 path = "/index.html";
 
@@ -276,9 +279,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             _prefix = prefix;
         }
 
-        public WebResourceResponse Handle(Uri url)
+        public WebResourceResponse Handle(string url)
         {
-            var path = url.Path ?? string.Empty;
+            var path = Android.Net.Uri.Parse(url)?.Path ?? string.Empty;
             if (path.StartsWith(_prefix) is false)
                 return NotFoundResponse();
 
@@ -313,9 +316,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             _activity = activity;
         }
 
-        public WebResourceResponse Handle(Uri url)
+        public WebResourceResponse Handle(string url)
         {
-            var segments = new List<string>(url.PathSegments);
+            var segments = new List<string>(Android.Net.Uri.Parse(url)?.PathSegments ?? (IList<string>)Array.Empty<string>());
             //segments[0] is the registered "plugins" prefix.
             if (segments.Count < 2)
                 return NotFoundResponse();

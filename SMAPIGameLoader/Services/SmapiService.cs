@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -34,7 +35,7 @@ public sealed class SmapiService
 
     public Task<JsonElement?> CheckSmapiUpdateAsync()
     {
-        return Task.Run(async () =>
+        return Task.Run<JsonElement?>(async () =>
         {
             if (SMAPIInstaller.IsInstalled == false)
                 throw new LauncherCommandException("smapi_missing", "SMAPI is not installed yet. Install SMAPI before checking for updates.");
@@ -74,7 +75,7 @@ public sealed class SmapiService
 
     public Task<JsonElement?> InstallSmapiUpdateAsync(JsonElement request)
     {
-        return Task.Run(async () =>
+        return Task.Run<JsonElement?>(async () =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.InstallSmapiUpdateRequest);
             var targetVersion = parsed.TargetVersion.Trim();
@@ -137,7 +138,7 @@ public sealed class SmapiService
 
     public Task<JsonElement?> FindSmapiInstallerDownloadsAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var candidates = new List<SmapiInstallerDownloadCandidate>();
             var scanDirectories = new List<string>();

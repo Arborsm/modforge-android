@@ -52,7 +52,7 @@ internal static class LauncherJsonHelper
     /// <summary>Reads a boolean property with a fallback default.</summary>
     public static bool BoolField(JsonElement element, string key, bool fallback = false)
     {
-        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.TrueOrFalse)
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var value) && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False))
             return value.GetBoolean();
 
         return fallback;

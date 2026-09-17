@@ -4,6 +4,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using System.Threading.Tasks;
 using SMAPIGameLoader.Services;
 
 namespace SMAPIGameLoader.Bridge;

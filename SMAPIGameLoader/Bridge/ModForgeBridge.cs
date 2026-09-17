@@ -1,7 +1,7 @@
 using Android.App;
 using Android.Webkit;
 using Android.Runtime;
-using SMAPIGameLoader.Launcher;
+using LauncherActivity = SMAPIGameLoader.Launcher.LauncherActivity;
 using SMAPIGameLoader.Services;
 using SMAPIGameLoader.Tool;
 using System;
@@ -44,7 +44,7 @@ public sealed class ModForgeBridge : Java.Lang.Object
     }
 
     [JavascriptInterface]
-    [Export("invokeCommand")]
+    [Java.Interop.Export("invokeCommand")]
     public void InvokeCommand(string command, string argsJson, string callbackId)
     {
         //Entry point only enqueues; blocking IO/network happen on the worker.

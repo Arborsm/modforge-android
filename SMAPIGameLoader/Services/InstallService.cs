@@ -28,7 +28,7 @@ public sealed class InstallService
 
     public Task<JsonElement?> GetLauncherBackupDirectoryAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var backupDirectory = BackupRoot;
             Directory.CreateDirectory(backupDirectory);
@@ -38,7 +38,7 @@ public sealed class InstallService
 
     public Task<JsonElement?> InstallLauncherArchiveAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.InstallLauncherArchiveRequest);
             var result = InstallLauncherArchive(parsed);
@@ -48,7 +48,7 @@ public sealed class InstallService
 
     public Task<JsonElement?> InspectLauncherArchiveAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.InspectLauncherArchiveRequest);
             var result = InspectLauncherArchive(parsed);
@@ -58,7 +58,7 @@ public sealed class InstallService
 
     public Task<JsonElement?> ListLauncherInstallBackupsAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.ListLauncherInstallBackupsRequest);
             var summaries = ListBackups(parsed.ModsPath);
@@ -68,7 +68,7 @@ public sealed class InstallService
 
     public Task<JsonElement?> RestoreLauncherInstallBackupAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.RestoreLauncherInstallBackupRequest);
             var result = RestoreBackup(parsed);

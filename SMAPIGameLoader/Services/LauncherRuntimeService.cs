@@ -1,5 +1,7 @@
+using Android.App;
 using Android.Content;
 using Android.Net;
+using LauncherActivity = SMAPIGameLoader.Launcher.LauncherActivity;
 using SMAPIGameLoader.Launcher;
 using SMAPIGameLoader.Tool;
 using System;
@@ -23,7 +25,7 @@ public sealed class LauncherRuntimeService
 
     public Task<JsonElement?> LoadLauncherSettingsAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var settings = LoadOrCreateSettings();
             return JsonSerializer.SerializeToElement(settings, LauncherJsonContext.Default.LauncherSettings);
@@ -32,7 +34,7 @@ public sealed class LauncherRuntimeService
 
     public Task<JsonElement?> SaveLauncherSettingsAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.SaveLauncherSettingsRequest);
             var settings = SaveSettings(parsed);
@@ -42,7 +44,7 @@ public sealed class LauncherRuntimeService
 
     public Task<JsonElement?> LaunchLauncherGameAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var activity = LauncherActivity.Instance
                 ?? throw new LauncherCommandException("unavailable", "The launcher activity is not running.");
@@ -76,7 +78,7 @@ public sealed class LauncherRuntimeService
 
     public Task<JsonElement?> LoadLauncherRuntimeInfoAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             string? gameVersion = null;
             string? smapiVersion = null;
@@ -105,17 +107,17 @@ public sealed class LauncherRuntimeService
 
     public Task<JsonElement?> OpenLauncherUrlAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.OpenLauncherUrlRequest);
             var url = parsed.Url.Trim();
-            if (Uri.TryCreate(url, UriKind.Absolute, out var parsedUri)
+            if (System.Uri.TryCreate(url, System.UriKind.Absolute, out var parsedUri)
                 && (parsedUri.Scheme == "http" || parsedUri.Scheme == "https"))
             {
-                var intent = new Intent(Intent.ActionView, Uri.Parse(url));
+                var intent = new Intent(Intent.ActionView, Android.Net.Uri.Parse(url));
                 intent.AddFlags(ActivityFlags.NewTask);
                 Application.Context.StartActivity(intent);
-                return null;
+                return (JsonElement?)null;
             }
 
             throw new LauncherCommandException("invalid_args", "open_launcher_url requires an absolute http(s) URL.");

@@ -28,7 +28,7 @@ public sealed class ModConfigService
 
     public Task<JsonElement?> LoadLauncherModConfigAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.LoadLauncherModConfigRequest);
             var result = LoadModConfig(parsed.ModPath, parsed.Locale);
@@ -38,7 +38,7 @@ public sealed class ModConfigService
 
     public Task<JsonElement?> SaveLauncherModConfigAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.SaveLauncherModConfigRequest);
             SaveModConfig(parsed);

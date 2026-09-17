@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Tasks;
 
 namespace SMAPIGameLoader.Services;
@@ -38,7 +39,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> ScanLauncherLibraryAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = Deserialize(request, LauncherJsonContext.Default.ScanLauncherLibraryRequest);
             var modsPath = parsed.ModsPath.Trim();
@@ -54,7 +55,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> SetLauncherModEnabledAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = Deserialize(request, LauncherJsonContext.Default.SetLauncherModEnabledRequest);
             var modPath = parsed.ModPath.Trim();
@@ -68,7 +69,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> LoadLauncherLibraryStateAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var state = LoadOrCreateLibraryState();
             return SerializeElement(state, LauncherJsonContext.Default.LauncherLibraryState);
@@ -77,7 +78,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> SaveLauncherLibraryStateAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var state = Deserialize(request, LauncherJsonContext.Default.LauncherLibraryState);
             SaveLibraryState(state);
@@ -87,7 +88,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> LoadLauncherLibraryCoversAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var covers = LoadOrCreateLibraryCovers();
             return SerializeElement(covers, LauncherJsonContext.Default.LauncherLibraryCoversState);
@@ -96,7 +97,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> SetLauncherLibraryCoverAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = Deserialize(request, LauncherJsonContext.Default.SetLauncherLibraryCoverRequest);
             var labelKey = parsed.LabelKey.Trim();
@@ -122,7 +123,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> LoadLauncherImageFailuresAsync()
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var state = LoadOrCreateImageFailures();
             return SerializeElement(state, LauncherJsonContext.Default.LauncherImageFailuresState);
@@ -131,7 +132,7 @@ public sealed class LibraryService
 
     public Task<JsonElement?> RecordLauncherImageFailureAsync(JsonElement request)
     {
-        return Task.Run(() =>
+        return Task.Run<JsonElement?>(() =>
         {
             var parsed = Deserialize(request, LauncherJsonContext.Default.RecordLauncherImageFailureRequest);
             var modKey = parsed.ModKey.Trim();
