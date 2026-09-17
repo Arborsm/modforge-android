@@ -96,8 +96,46 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         _bridge = new ModForgeBridge(this);
         _webView.AddJavascriptInterface(_bridge, "modforgeBridge");
 
-        SetContentView(_webView);
+        // Android 15 enforces edge-to-edge: pad the WebView by the system-bar
+        // insets so the front-end never renders under the status/gesture bars.
+        // The listener runs before the first layout, so the SPA never sees the
+        // overlap. Light status-bar icons: the launcher chrome is light.
+        _webView.SetBackgroundColor(Android.Graphics.Color.Rgb(245, 245, 248));
+        AndroidX.Core.View.WindowCompat.SetDecorFitsSystemWindows(Window, false);
+        var insetsController = AndroidX.Core.View.WindowCompat.GetInsetsController(Window, _webView);
+        insetsController.AppearanceLightStatusBars = true;
+        var rootLayout = new Android.Widget.FrameLayout(this)
+        {
+            LayoutParameters = new Android.Views.ViewGroup.LayoutParams(
+                Android.Views.ViewGroup.LayoutParams.MatchParent,
+                Android.Views.ViewGroup.LayoutParams.MatchParent),
+        };
+        rootLayout.AddView(_webView);
+        SetContentView(rootLayout);
+        AndroidX.Core.View.ViewCompat.SetOnApplyWindowInsetsListener(rootLayout, new SystemBarInsetsListener(this));
         _webView.LoadUrl(AssetHostOrigin + "/index.html");
+    }
+
+    sealed class SystemBarInsetsListener : Java.Lang.Object, AndroidX.Core.View.IOnApplyWindowInsetsListener
+    {
+        readonly LauncherActivity _activity;
+
+        public SystemBarInsetsListener(LauncherActivity activity)
+        {
+            _activity = activity;
+        }
+
+        public AndroidX.Core.View.WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, AndroidX.Core.View.WindowInsetsCompat insets)
+        {
+            var bars = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.StatusBars());
+            Android.Util.Log.Info("MODFORGE", $"SystemBarInsetsListener fired, top={bars?.Top}, left={bars?.Left}");
+            if (bars != null)
+            {
+                v.SetPadding(bars.Left, bars.Top, bars.Right, bars.Bottom);
+            }
+
+            return insets;
+        }
     }
 
     /// <summary>Runs one JS snippet on the UI thread; the bridge uses it to push response/event frames.</summary>
