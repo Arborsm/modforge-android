@@ -1,0 +1,5 @@
+{
+  "description": "Launch version gates for the ModForge Android launcher. Fetched at startup from this file (raw.githubusercontent) and applied by LauncherRequirements; a failed fetch keeps the previous or built-in defaults.",
+  "minimumGameVersion": "1.6.15.3",
+  "minimumSmapiVersion": "4.0.0"
+}

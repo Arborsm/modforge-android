@@ -1,0 +1,40 @@
+using System.Text.Json.Serialization;
+
+namespace SMAPIGameLoader.Services;
+
+/// <summary>Source-generated serializer set for every launcher bridge contract type.</summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = false)]
+[JsonSerializable(typeof(LauncherSettings))]
+[JsonSerializable(typeof(SaveLauncherSettingsRequest))]
+[JsonSerializable(typeof(ScanLauncherLibraryRequest))]
+[JsonSerializable(typeof(LauncherLibraryScanResult))]
+[JsonSerializable(typeof(LauncherLibraryModSummary))]
+[JsonSerializable(typeof(SetLauncherModEnabledRequest))]
+[JsonSerializable(typeof(SetLauncherModEnabledResult))]
+[JsonSerializable(typeof(LauncherLibraryState))]
+[JsonSerializable(typeof(LauncherLibraryCoversState))]
+[JsonSerializable(typeof(SetLauncherLibraryCoverRequest))]
+[JsonSerializable(typeof(LauncherImageFailuresState))]
+[JsonSerializable(typeof(RecordLauncherImageFailureRequest))]
+[JsonSerializable(typeof(LauncherRuntimeInfo))]
+[JsonSerializable(typeof(LauncherGameLaunchResult))]
+[JsonSerializable(typeof(OpenLauncherUrlRequest))]
+[JsonSerializable(typeof(LauncherModConfigResult))]
+[JsonSerializable(typeof(LoadLauncherModConfigRequest))]
+[JsonSerializable(typeof(SaveLauncherModConfigRequest))]
+[JsonSerializable(typeof(InstallLauncherArchiveRequest))]
+[JsonSerializable(typeof(InstallLauncherArchiveResult))]
+[JsonSerializable(typeof(InspectLauncherArchiveRequest))]
+[JsonSerializable(typeof(InspectLauncherArchiveResult))]
+[JsonSerializable(typeof(ListLauncherInstallBackupsRequest))]
+[JsonSerializable(typeof(LauncherInstallBackupSummary))]
+[JsonSerializable(typeof(RestoreLauncherInstallBackupRequest))]
+[JsonSerializable(typeof(RestoreLauncherInstallBackupResult))]
+[JsonSerializable(typeof(SmapiUpdateCheckResult))]
+[JsonSerializable(typeof(InstallSmapiUpdateRequest))]
+[JsonSerializable(typeof(InstallSmapiUpdateResult))]
+[JsonSerializable(typeof(FindSmapiInstallerDownloadsResult))]
+[JsonSerializable(typeof(InstallBackupSessionMetadata))]
+internal sealed partial class LauncherJsonContext : JsonSerializerContext
+{
+}
