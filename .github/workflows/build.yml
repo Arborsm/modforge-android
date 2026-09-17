@@ -1,0 +1,152 @@
+name: Android APK Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - feat/modforge-shell
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      studio_ref:
+        description: ModForge Studio branch supplying the web front-end
+        default: feat/android-host
+  repository_dispatch:
+
+# The compile step needs three game-derived reference DLLs that cannot be
+# committed (ModForge NOTICE: zero game files). They are downloaded from the
+# PRIVATE Arborsm/modforge-private-libs release `dependencies-dll` using a
+# fine-grained PAT stored as the LIBS_TOKEN secret (read-only Contents on
+# that repository). Without LIBS_TOKEN the job fails fast with setup
+# instructions instead of a confusing compile error.
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-24.04
+    env:
+      STUDIO_REF: ${{ github.event.inputs.studio_ref || 'feat/android-host' }}
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+
+    steps:
+      - name: Check LIBS_TOKEN
+        id: libs
+        env:
+          LIBS_TOKEN: ${{ secrets.LIBS_TOKEN }}
+        run: |
+          if [ -z "$LIBS_TOKEN" ]; then
+            echo "::error::Secret LIBS_TOKEN is not set. Create a fine-grained PAT (read-only Contents on Arborsm/modforge-private-libs) and add it as a repository secret. The compile step needs the game-derived DependenciesDll from that private release."
+            exit 1
+          fi
+          echo "token=ok" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout modforge-android
+        uses: actions/checkout@v4
+
+      - name: Checkout ModForge Studio (front-end)
+        uses: actions/checkout@v4
+        with:
+          repository: Arborsm/ModForge-Studio
+          ref: ${{ env.STUDIO_REF }}
+          path: modforge-studio
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          working-directory: modforge-studio
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: modforge-studio/pnpm-lock.yaml
+
+      - name: Build web front-end
+        working-directory: modforge-studio
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Embed front-end into APK assets
+        run: |
+          rm -rf SMAPIGameLoader/Assets/www/*
+          cp -r modforge-studio/apps/desktop/dist/. SMAPIGameLoader/Assets/www/
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install Android workload (9.0 band via repo global.json)
+        run: dotnet workload install android
+
+      - name: Ensure Android SDK platform 35
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Restore .NET dependencies
+        run: dotnet restore SMAPIGameLoader/SMAPIGameLoader.csproj
+
+      - name: Patch Mono runtime with reflection unlock (SharedLibs custom libmonosgen)
+        run: |
+          pack_dir="$HOME/.dotnet/packs/Microsoft.NETCore.App.Runtime.Mono.android-arm64"
+          shopt -s nullglob
+          for so in "$pack_dir"/*/runtimes/android-arm64/native/libmonosgen-2.0.so; do
+            if ! cmp -s "$so" SharedLibs/native/arm64-v8a/libmonosgen-2.0.so; then
+              cp "$so" "$so.stock.bak"
+              cp SharedLibs/native/arm64-v8a/libmonosgen-2.0.so "$so"
+              echo "patched $so"
+            fi
+          done
+          shopt -u nullglob
+          count=$(find "$pack_dir" -name 'libmonosgen-2.0.so' ! -name '*.bak' -size +3115000c | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::warning::No runtime pack libmonosgen was patched; the APK will embed the stock Mono runtime and SMAPI reflection will fail on device."
+          fi
+
+      - name: Download DependenciesDll (private release asset)
+        env:
+          GH_TOKEN: ${{ secrets.LIBS_TOKEN }}
+        run: |
+          target="$GITHUB_WORKSPACE/../SMAPI-Android-1.6/src/DependenciesDll"
+          mkdir -p "$target"
+          gh release download dependencies-dll \
+            --repo Arborsm/modforge-private-libs \
+            --pattern "DependenciesDll.zip" \
+            --dir "$target" \
+            --clobber
+          cd "$target"
+          unzip -o DependenciesDll.zip
+          ls -la
+
+      - name: Build APK (Release)
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: dotnet build SMAPIGameLoader/SMAPIGameLoader.csproj -c Release -p:AndroidSdkDirectory="$ANDROID_HOME"
+
+      - name: Verify embedded Mono runtime is the reflection-unlocked build
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = zipfile.ZipFile(next(iter(__import__('glob').glob('SMAPIGameLoader/bin/Release/net9.0-android/*-Signed.apk'))))
+          info = apk.getinfo('lib/arm64-v8a/libmonosgen-2.0.so')
+          print('embedded libmonosgen size:', info.file_size)
+          assert info.file_size != 3110072, 'stock Mono runtime embedded - the pack patch did not apply'
+          PY
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: modforge-android-apk
+          path: SMAPIGameLoader/bin/Release/net9.0-android/*-Signed.apk
+          if-no-files-found: error
