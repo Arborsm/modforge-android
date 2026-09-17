@@ -51,6 +51,17 @@ public sealed class ModForgeBridge : Java.Lang.Object
         _queue.TryAdd(new PendingCommand(command ?? string.Empty, argsJson ?? string.Empty, callbackId ?? string.Empty));
     }
 
+    /// <summary>
+    ///     Front-end acknowledgement for an <c>android:back</c> event: the SPA closed its
+    ///     topmost overlay, so the activity must not move the task to the background.
+    /// </summary>
+    [JavascriptInterface]
+    [Java.Interop.Export("backHandled")]
+    public void BackHandled()
+    {
+        _activity.MarkBackHandled();
+    }
+
     /// <summary>Pushes one host event frame to the front-end; callable from services.</summary>
     public void DispatchEvent(string eventName, JsonNode payload)
     {

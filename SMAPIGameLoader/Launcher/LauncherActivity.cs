@@ -117,16 +117,33 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         EvaluateJavaScript("window.__modforgeDispatch && window.__modforgeDispatch(" + frame + ");");
     }
 
+    /// <summary>Set by the front-end through <see cref="ModForgeBridge.BackHandled" /> when it closed an overlay for this back press.</summary>
+    volatile bool _backHandled;
+
+    /// <summary>Acknowledgement from the front-end for the most recent <c>android:back</c> event.</summary>
+    public void MarkBackHandled()
+    {
+        _backHandled = true;
+    }
+
     public override void OnBackPressed()
     {
-        if (_webView?.CanGoBack() == true)
+        // Ask the SPA to close its topmost overlay (mobile pages); if it claims
+        // the back press within the window we stay, otherwise move to background.
+        _backHandled = false;
+        DispatchEventToJs("android:back", "{}");
+        Task.Run(async () =>
         {
-            _webView.GoBack();
-            return;
-        }
-
-        //Back returns to the Android home screen; the app keeps running in background.
-        MoveTaskToBack(true);
+            await Task.Delay(150).ConfigureAwait(false);
+            RunOnUiThread(() =>
+            {
+                if (!_backHandled)
+                {
+                    //Back returns to the Android home screen; the app keeps running in background.
+                    MoveTaskToBack(true);
+                }
+            });
+        });
     }
 
     /// <summary>Opens the SAF document picker; resolves with the picked URIs, or null when cancelled.</summary>
