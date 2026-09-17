@@ -102,7 +102,19 @@ jobs:
 
       - name: Patch Mono runtime with reflection unlock (SharedLibs custom libmonosgen)
         run: |
-          pack_dir="$HOME/.dotnet/packs/Microsoft.NETCore.App.Runtime.Mono.android-arm64"
+          # Runtime packs land under the active dotnet root (setup-dotnet uses
+          # /usr/share/dotnet); $HOME/.dotnet is only for portable user installs.
+          pack_dir=""
+          for root in "${DOTNET_ROOT:-/usr/share/dotnet}" "$HOME/.dotnet"; do
+            if [ -d "$root/packs/Microsoft.NETCore.App.Runtime.Mono.android-arm64" ]; then
+              pack_dir="$root/packs/Microsoft.NETCore.App.Runtime.Mono.android-arm64"
+              break
+            fi
+          done
+          if [ -z "$pack_dir" ]; then
+            echo "::error::Mono android-arm64 runtime pack was not restored. dotnet restore -r android-arm64 must run before this step."
+            exit 1
+          fi
           shopt -s nullglob
           for so in "$pack_dir"/*/runtimes/android-arm64/native/libmonosgen-2.0.so; do
             if ! cmp -s "$so" SharedLibs/native/arm64-v8a/libmonosgen-2.0.so; then
@@ -114,7 +126,8 @@ jobs:
           shopt -u nullglob
           count=$(find "$pack_dir" -name 'libmonosgen-2.0.so' ! -name '*.bak' -size +3115000c | wc -l)
           if [ "$count" -eq 0 ]; then
-            echo "::warning::No runtime pack libmonosgen was patched; the APK will embed the stock Mono runtime and SMAPI reflection will fail on device."
+            echo "::error::No runtime pack libmonosgen was patched; the APK would embed the stock Mono runtime and SMAPI reflection would fail on device."
+            exit 1
           fi
 
       - name: Download DependenciesDll (private release asset)
