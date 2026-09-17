@@ -32,6 +32,31 @@ public sealed class LauncherRuntimeService
         });
     }
 
+    /// <summary>Returns the tail of the captured console log for the in-app log viewer.</summary>
+    public Task<JsonElement?> ReadLauncherLogAsync(JsonElement request)
+    {
+        return Task.Run<JsonElement?>(() =>
+        {
+            var maxLines = 400;
+            if (request.ValueKind == JsonValueKind.Object
+                && request.TryGetProperty("maxLines", out var maxLinesElement)
+                && maxLinesElement.TryGetInt32(out var parsedMaxLines))
+            {
+                maxLines = Math.Clamp(parsedMaxLines, 1, 2_000);
+            }
+
+            var (lines, totalLines, truncated) = LogCapture.ReadTail(maxLines);
+            var payload = new System.Text.Json.Nodes.JsonObject
+            {
+                ["lines"] = new System.Text.Json.Nodes.JsonArray(
+                    System.Linq.Enumerable.Select(lines, line => (System.Text.Json.Nodes.JsonNode?)System.Text.Json.Nodes.JsonValue.Create(line)).ToArray()),
+                ["totalLines"] = totalLines,
+                ["truncated"] = truncated,
+            };
+            return JsonSerializer.SerializeToElement(payload);
+        });
+    }
+
     public Task<JsonElement?> SaveLauncherSettingsAsync(JsonElement request)
     {
         return Task.Run<JsonElement?>(() =>

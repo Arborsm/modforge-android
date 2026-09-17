@@ -52,6 +52,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         Instance = this;
         base.OnCreate(savedInstanceState);
 
+        // Capture game/SMAPI/.NET console output before anything logs.
+        LogCapture.Install();
+
         Xamarin.Essentials.Platform.Init(this, savedInstanceState);
         ActivityTool.Init(this);
 
