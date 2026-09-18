@@ -134,8 +134,11 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
         public AndroidX.Core.View.WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, AndroidX.Core.View.WindowInsetsCompat insets)
         {
-            var bars = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.StatusBars());
-            Android.Util.Log.Info("MODFORGE", $"SystemBarInsetsListener fired, top={bars?.Top}, left={bars?.Left}");
+            // SystemBars (not just StatusBars): the bottom padding lifts the
+            // WebView above the gesture/3-button nav bar, otherwise every
+            // bottom-anchored chrome (bottom nav, pagination) lands under it.
+            var bars = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars());
+            Android.Util.Log.Info("MODFORGE", $"SystemBarInsetsListener fired, top={bars?.Top}, bottom={bars?.Bottom}");
             if (bars != null)
             {
                 v.SetPadding(bars.Left, bars.Top, bars.Right, bars.Bottom);
