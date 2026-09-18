@@ -38,6 +38,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     WebView? _webView;
     WebViewAssetLoader? _assetLoader;
     ModForgeBridge? _bridge;
+    Android.Widget.FrameLayout? _rootLayout;
 
     const int PickFileRequestCode = 9101;
     const int PickDirectoryRequestCode = 9102;
@@ -110,6 +111,11 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
                 Android.Views.ViewGroup.LayoutParams.MatchParent,
                 Android.Views.ViewGroup.LayoutParams.MatchParent),
         };
+        // The WebView is inset below the status bar, so the strip above it
+        // shows this root background; tint it to match the launcher surface
+        // (the front-end re-tints it live whenever the theme changes).
+        rootLayout.SetBackgroundColor(Android.Graphics.Color.Rgb(245, 245, 248));
+        _rootLayout = rootLayout;
         rootLayout.AddView(_webView);
         SetContentView(rootLayout);
         AndroidX.Core.View.ViewCompat.SetOnApplyWindowInsetsListener(rootLayout, new SystemBarInsetsListener(this));
@@ -144,6 +150,40 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         RunOnUiThread(() =>
         {
             _webView?.EvaluateJavascript(script, null);
+        });
+    }
+
+    /// <summary>
+    /// Tints the system-bar strip to the front-end app surface color and picks
+    /// light/dark system-bar icons. The WebView sits below the status bar, so
+    /// the visible strip is the root layout background painted by this call.
+    /// </summary>
+    public void SetSystemBars(string hexColor, bool lightBars)
+    {
+        Android.Graphics.Color color;
+        try
+        {
+            color = Android.Graphics.Color.ParseColor(hexColor);
+        }
+        catch (Exception)
+        {
+            //Malformed theme color from the front-end: keep the current chrome.
+            return;
+        }
+
+        RunOnUiThread(() =>
+        {
+            _rootLayout?.SetBackgroundColor(color);
+            if (Window is null)
+            {
+                return;
+            }
+
+            Window.SetStatusBarColor(color);
+            Window.SetNavigationBarColor(color);
+            var controller = AndroidX.Core.View.WindowCompat.GetInsetsController(Window, _webView ?? Window.DecorView);
+            controller.AppearanceLightStatusBars = lightBars;
+            controller.AppearanceLightNavigationBars = lightBars;
         });
     }
 

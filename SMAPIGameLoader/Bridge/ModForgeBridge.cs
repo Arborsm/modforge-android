@@ -25,6 +25,7 @@ public sealed class ModForgeBridge : Java.Lang.Object
     public const string PickFileCommand = "android:pick_file";
     public const string PickDirectoryCommand = "android:pick_dir";
     public const string CreateDocumentCommand = "android:create_document";
+    public const string SetSystemBarsCommand = "android:set_system_bars";
 
     /// <summary>Single bridge instance; services use it to push event frames.</summary>
     public static ModForgeBridge? Instance { get; private set; }
@@ -108,6 +109,8 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 return await PickDirectoryAsync(args).ConfigureAwait(false);
             case CreateDocumentCommand:
                 return await CreateDocumentAsync(args).ConfigureAwait(false);
+            case SetSystemBarsCommand:
+                return SetSystemBars(args);
             default:
                 if (BootstrapCommands.Handles(pending.Command))
                     return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
@@ -160,6 +163,15 @@ public sealed class ModForgeBridge : Java.Lang.Object
         var mimeType = ResolveMimeType(args);
         var uri = await _activity.CreateDocumentAsync(mimeType, string.IsNullOrWhiteSpace(defaultPath) ? "export.bin" : defaultPath!).ConfigureAwait(false);
         return uri?.ToString();
+    }
+
+    JsonNode? SetSystemBars(JsonElement args)
+    {
+        var hex = args.TryGetProperty("hex", out var hexElement) ? hexElement.GetString() : null;
+        var lightBars = !args.TryGetProperty("lightBars", out var lightElement) || lightElement.ValueKind != JsonValueKind.False;
+        if (!string.IsNullOrWhiteSpace(hex))
+            _activity.SetSystemBars(hex!, lightBars);
+        return null;
     }
 
     async Task<string> CopyToSandboxAsync(Android.Net.Uri uri)
