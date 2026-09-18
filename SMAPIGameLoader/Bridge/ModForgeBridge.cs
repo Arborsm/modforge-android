@@ -27,6 +27,7 @@ public sealed class ModForgeBridge : Java.Lang.Object
     public const string CreateDocumentCommand = "android:create_document";
     public const string SetSystemBarsCommand = "android:set_system_bars";
     public const string OpenInAppBrowserCommand = "android:open_in_app_browser";
+    public const string AiRequestCommand = "android:ai_request";
 
     /// <summary>Single bridge instance; services use it to push event frames.</summary>
     public static ModForgeBridge? Instance { get; private set; }
@@ -114,6 +115,8 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 return SetSystemBars(args);
             case OpenInAppBrowserCommand:
                 return OpenInAppBrowser(args);
+            case AiRequestCommand:
+                return await AiRequestAsync(args).ConfigureAwait(false);
             default:
                 if (BootstrapCommands.Handles(pending.Command))
                     return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
@@ -186,6 +189,57 @@ public sealed class ModForgeBridge : Java.Lang.Object
         if (!_activity.OpenInAppBrowser(url!))
             throw new LauncherCommandException("unavailable", "The in-app browser is not ready yet.");
         return null;
+    }
+
+    /// <summary>
+    ///     Minimal authenticated HTTP proxy for the front-end's self-contained AI calls
+    ///     (e.g. game-log error analysis). The workbench AI command surface is not bridged,
+    ///     so the launcher builds provider requests itself and pipes them through here;
+    ///     only http(s) GET/POST are allowed and responses are capped at 1 MB.
+    /// </summary>
+    async Task<JsonNode?> AiRequestAsync(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url!.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "ai_request requires an absolute http(s) URL.");
+        var method = args.TryGetProperty("method", out var methodElement) ? methodElement.GetString() : null;
+        var useGet = string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase);
+        var usePost = !useGet && string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase);
+        if (!useGet && !usePost)
+            throw new LauncherCommandException("invalid_args", "ai_request only supports GET and POST.");
+
+        using var request = new System.Net.Http.HttpRequestMessage(
+            usePost ? System.Net.Http.HttpMethod.Post : System.Net.Http.HttpMethod.Get,
+            url);
+        if (args.TryGetProperty("headers", out var headers) && headers.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var header in headers.EnumerateObject())
+            {
+                var value = header.Value.ValueKind == JsonValueKind.String ? header.Value.GetString() : null;
+                if (!string.IsNullOrEmpty(value))
+                    request.Headers.TryAddWithoutValidation(header.Name, value);
+            }
+        }
+
+        var body = args.TryGetProperty("body", out var bodyElement) && bodyElement.ValueKind == JsonValueKind.String
+            ? bodyElement.GetString()
+            : null;
+        if (usePost)
+            request.Content = new System.Net.Http.StringContent(body ?? string.Empty, Encoding.UTF8, "application/json");
+
+        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        using var response = await client.SendAsync(request).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        const int maxResponseChars = 1_000_000;
+        if (responseText.Length > maxResponseChars)
+            responseText = responseText.Substring(0, maxResponseChars);
+
+        return new JsonObject
+        {
+            ["statusCode"] = (int)response.StatusCode,
+            ["body"] = responseText,
+        };
     }
 
     async Task<string> CopyToSandboxAsync(Android.Net.Uri uri)
