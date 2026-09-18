@@ -121,6 +121,9 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 if (BootstrapCommands.Handles(pending.Command))
                     return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
 
+                if (AiCommands.Handles(pending.Command))
+                    return await AiCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
                 return await DispatchLauncherCommandAsync(pending.Command, args).ConfigureAwait(false);
         }
     }
@@ -192,10 +195,11 @@ public sealed class ModForgeBridge : Java.Lang.Object
     }
 
     /// <summary>
-    ///     Minimal authenticated HTTP proxy for the front-end's self-contained AI calls
-    ///     (e.g. game-log error analysis). The workbench AI command surface is not bridged,
-    ///     so the launcher builds provider requests itself and pipes them through here;
-    ///     only http(s) GET/POST are allowed and responses are capped at 1 MB.
+    ///     Authenticated HTTP proxy for the front-end's self-contained AI calls
+    ///     (e.g. game-log error analysis). Callers either pass explicit headers or
+    ///     a saved workbench AI profileId, in which case the bridge attaches the
+    ///     stored credential server-side so keys never reach JavaScript. Only
+    ///     http(s) GET/POST are allowed and responses are capped at 1 MB.
     /// </summary>
     async Task<JsonNode?> AiRequestAsync(JsonElement args)
     {
@@ -219,6 +223,28 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 var value = header.Value.ValueKind == JsonValueKind.String ? header.Value.GetString() : null;
                 if (!string.IsNullOrEmpty(value))
                     request.Headers.TryAddWithoutValidation(header.Name, value);
+            }
+        }
+
+        //A saved profile id resolves the credential on the native side; explicit
+        //caller headers win so custom auth stays possible.
+        var profileId = args.TryGetProperty("profileId", out var profileIdElement) && profileIdElement.ValueKind == JsonValueKind.String
+            ? profileIdElement.GetString()
+            : null;
+        if (!string.IsNullOrWhiteSpace(profileId) && !request.Headers.Contains("authorization") && !request.Headers.Contains("x-api-key"))
+        {
+            var profile = AiCommands.FindProfileWithKey(profileId!)
+                ?? throw new LauncherCommandException("not_found", $"AI profile '{profileId}' was not found or has no API key.");
+            var protocol = profile["protocol"]?.GetValue<string>() ?? string.Empty;
+            var apiKey = profile["apiKey"]?.GetValue<string>() ?? string.Empty;
+            if (protocol == "anthropic-messages")
+            {
+                request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            }
+            else
+            {
+                request.Headers.TryAddWithoutValidation("authorization", $"Bearer {apiKey}");
             }
         }
 

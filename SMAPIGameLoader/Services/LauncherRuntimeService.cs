@@ -43,7 +43,7 @@ public sealed class LauncherRuntimeService
                 && request.TryGetProperty("maxLines", out var maxLinesElement)
                 && maxLinesElement.TryGetInt32(out var parsedMaxLines))
             {
-                maxLines = Math.Clamp(parsedMaxLines, 1, 2_000);
+                maxLines = Math.Clamp(parsedMaxLines, 1, 20_000);
             }
 
             var (lines, totalLines, truncated) = LogCapture.ReadTail(maxLines);
