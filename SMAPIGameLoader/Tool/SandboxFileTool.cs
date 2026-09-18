@@ -27,9 +27,6 @@ internal static class SandboxFileTool
     /// <summary>Directory SAF-picked files are copied into before their path is returned to the front-end.</summary>
     public static string PickedFilesDir => Path.Combine(ExternalFilesDir, "Picked");
 
-    /// <summary>Default directory for Nexus mod archives downloaded on the Android host.</summary>
-    public static string DownloadFilesDir => Path.Combine(ExternalFilesDir, "Downloads");
-
     public static bool IsInsideAppSandbox(Activity activity, string filePath)
     {
         if (string.IsNullOrEmpty(filePath))

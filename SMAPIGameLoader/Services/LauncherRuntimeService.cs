@@ -251,33 +251,14 @@ public sealed class LauncherRuntimeService
         settings.ModsPath = NormalizeOptionalPath(settings.ModsPath);
         settings.NexusApiKey = string.IsNullOrWhiteSpace(settings.NexusApiKey) ? null : settings.NexusApiKey!.Trim();
 
-        //Android defaults: the sandbox Mods dir and the sandbox Downloads folder.
+        //Android defaults: the sandbox Mods dir and the SAF import folder.
         if (settings.ModsPath is null)
             settings.ModsPath = ModTool.ModsDir;
         if (settings.DownloadPath is null)
-            settings.DownloadPath = NexusService.DownloadLocationDownloadsToken;
+            settings.DownloadPath = SandboxFileTool.PickedFilesDir;
 
-        settings.DownloadPath = NormalizeDownloadLocation(settings.DownloadPath);
+        settings.DownloadPath = NormalizeOptionalPath(settings.DownloadPath);
         return settings;
-    }
-
-    // The download location is a sandbox-folder token on this host; older
-    // settings stored the resolved absolute path, which is migrated here so
-    // the front-end radio always has a matching option.
-    static string NormalizeDownloadLocation(string? value)
-    {
-        var candidate = NormalizeOptionalPath(value);
-        if (candidate is null)
-            return NexusService.DownloadLocationDownloadsToken;
-        if (string.Equals(candidate, NexusService.DownloadLocationDownloadsToken, StringComparison.Ordinal) ||
-            string.Equals(candidate, NexusService.DownloadLocationPickedToken, StringComparison.Ordinal))
-            return candidate;
-        if (string.Equals(candidate, SandboxFileTool.PickedFilesDir, StringComparison.Ordinal))
-            return NexusService.DownloadLocationPickedToken;
-        if (string.Equals(candidate, SandboxFileTool.DownloadFilesDir, StringComparison.Ordinal))
-            return NexusService.DownloadLocationDownloadsToken;
-
-        return candidate;
     }
 
     static string? NormalizeOptionalPath(string? value)
