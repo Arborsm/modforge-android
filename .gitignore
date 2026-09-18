@@ -369,3 +369,7 @@ FodyWeavers.xsd
 .tmp-extract/manifest.xml
 
 .tmp-extract/
+
+# Compiled web front-end (built from the ModForge Studio repo and copied in
+# before packaging; CI regenerates it on every run).
+SMAPIGameLoader/Assets/www/
