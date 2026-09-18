@@ -6,6 +6,7 @@ using SMAPIGameLoader.Launcher;
 using SMAPIGameLoader.Tool;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -29,6 +30,31 @@ public sealed class LauncherRuntimeService
         {
             var settings = LoadOrCreateSettings();
             return JsonSerializer.SerializeToElement(settings, LauncherJsonContext.Default.LauncherSettings);
+        });
+    }
+
+    /// <summary>Returns the tail of the captured console log for the in-app log viewer.</summary>
+    public Task<JsonElement?> ReadLauncherLogAsync(JsonElement request)
+    {
+        return Task.Run<JsonElement?>(() =>
+        {
+            var maxLines = 400;
+            if (request.ValueKind == JsonValueKind.Object
+                && request.TryGetProperty("maxLines", out var maxLinesElement)
+                && maxLinesElement.TryGetInt32(out var parsedMaxLines))
+            {
+                maxLines = Math.Clamp(parsedMaxLines, 1, 20_000);
+            }
+
+            var (lines, totalLines, truncated) = LogCapture.ReadTail(maxLines);
+            var payload = new System.Text.Json.Nodes.JsonObject
+            {
+                ["lines"] = new System.Text.Json.Nodes.JsonArray(
+                    System.Linq.Enumerable.Select(lines, line => (System.Text.Json.Nodes.JsonNode?)System.Text.Json.Nodes.JsonValue.Create(line)).ToArray()),
+                ["totalLines"] = totalLines,
+                ["truncated"] = truncated,
+            };
+            return JsonSerializer.SerializeToElement(payload);
         });
     }
 

@@ -38,6 +38,11 @@ public static class LauncherBridgeGenerated
                 var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.OpenLauncherUrlParams);
                 return await services.Runtime.OpenLauncherUrlAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
             }
+            case "read_launcher_log":
+            {
+                var envelope = Deserialize(args, LauncherBridgeJsonContext.Default.ReadLauncherLogParams);
+                return await services.Runtime.ReadLauncherLogAsync(Require(envelope.Request, command, "request")).ConfigureAwait(false);
+            }
             case "load_launcher_library_state":
                 return await services.Library.LoadLauncherLibraryStateAsync().ConfigureAwait(false);
             case "save_launcher_library_state":
@@ -225,6 +230,8 @@ public sealed record OpenLauncherPathParams([property: JsonPropertyName("request
 
 public sealed record OpenLauncherUrlParams([property: JsonPropertyName("request")] global::System.Text.Json.JsonElement? Request);
 
+public sealed record ReadLauncherLogParams([property: JsonPropertyName("request")] global::System.Text.Json.JsonElement? Request);
+
 public sealed record LoadLauncherLibraryStateParams();
 
 public sealed record SaveLauncherLibraryStateParams([property: JsonPropertyName("request")] global::System.Text.Json.JsonElement? Request);
@@ -315,6 +322,7 @@ public sealed record CancelNexusSsoParams();
 [JsonSerializable(typeof(GetLauncherBackupDirectoryParams))]
 [JsonSerializable(typeof(OpenLauncherPathParams))]
 [JsonSerializable(typeof(OpenLauncherUrlParams))]
+[JsonSerializable(typeof(ReadLauncherLogParams))]
 [JsonSerializable(typeof(LoadLauncherLibraryStateParams))]
 [JsonSerializable(typeof(SaveLauncherLibraryStateParams))]
 [JsonSerializable(typeof(LoadLauncherLibraryCoversParams))]

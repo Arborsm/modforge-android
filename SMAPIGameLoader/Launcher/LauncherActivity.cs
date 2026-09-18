@@ -38,6 +38,8 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     WebView? _webView;
     WebViewAssetLoader? _assetLoader;
     ModForgeBridge? _bridge;
+    Android.Widget.FrameLayout? _rootLayout;
+    InAppBrowserOverlay? _inAppBrowser;
 
     const int PickFileRequestCode = 9101;
     const int PickDirectoryRequestCode = 9102;
@@ -51,6 +53,9 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     {
         Instance = this;
         base.OnCreate(savedInstanceState);
+
+        // Capture game/SMAPI/.NET console output before anything logs.
+        LogCapture.Install();
 
         Xamarin.Essentials.Platform.Init(this, savedInstanceState);
         ActivityTool.Init(this);
@@ -93,8 +98,54 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         _bridge = new ModForgeBridge(this);
         _webView.AddJavascriptInterface(_bridge, "modforgeBridge");
 
-        SetContentView(_webView);
+        // Android 15 enforces edge-to-edge: pad the WebView by the system-bar
+        // insets so the front-end never renders under the status/gesture bars.
+        // The listener runs before the first layout, so the SPA never sees the
+        // overlap. Light status-bar icons: the launcher chrome is light.
+        _webView.SetBackgroundColor(Android.Graphics.Color.Rgb(245, 245, 248));
+        AndroidX.Core.View.WindowCompat.SetDecorFitsSystemWindows(Window, false);
+        var insetsController = AndroidX.Core.View.WindowCompat.GetInsetsController(Window, _webView);
+        insetsController.AppearanceLightStatusBars = true;
+        var rootLayout = new Android.Widget.FrameLayout(this)
+        {
+            LayoutParameters = new Android.Views.ViewGroup.LayoutParams(
+                Android.Views.ViewGroup.LayoutParams.MatchParent,
+                Android.Views.ViewGroup.LayoutParams.MatchParent),
+        };
+        // The WebView is inset below the status bar, so the strip above it
+        // shows this root background; tint it to match the launcher surface
+        // (the front-end re-tints it live whenever the theme changes).
+        rootLayout.SetBackgroundColor(Android.Graphics.Color.Rgb(245, 245, 248));
+        _rootLayout = rootLayout;
+        rootLayout.AddView(_webView);
+        SetContentView(rootLayout);
+        AndroidX.Core.View.ViewCompat.SetOnApplyWindowInsetsListener(rootLayout, new SystemBarInsetsListener(this));
         _webView.LoadUrl(AssetHostOrigin + "/index.html");
+    }
+
+    sealed class SystemBarInsetsListener : Java.Lang.Object, AndroidX.Core.View.IOnApplyWindowInsetsListener
+    {
+        readonly LauncherActivity _activity;
+
+        public SystemBarInsetsListener(LauncherActivity activity)
+        {
+            _activity = activity;
+        }
+
+        public AndroidX.Core.View.WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, AndroidX.Core.View.WindowInsetsCompat insets)
+        {
+            // SystemBars (not just StatusBars): the bottom padding lifts the
+            // WebView above the gesture/3-button nav bar, otherwise every
+            // bottom-anchored chrome (bottom nav, pagination) lands under it.
+            var bars = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars());
+            Android.Util.Log.Info("MODFORGE", $"SystemBarInsetsListener fired, top={bars?.Top}, bottom={bars?.Bottom}");
+            if (bars != null)
+            {
+                v.SetPadding(bars.Left, bars.Top, bars.Right, bars.Bottom);
+            }
+
+            return insets;
+        }
     }
 
     /// <summary>Runs one JS snippet on the UI thread; the bridge uses it to push response/event frames.</summary>
@@ -106,6 +157,58 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         });
     }
 
+    /// <summary>Root layout hosting the app WebView; the in-app browser overlay mounts on top of it.</summary>
+    internal Android.Widget.FrameLayout? RootLayout => _rootLayout;
+
+    /// <summary>
+    ///     Opens the built-in in-app browser overlay at an http(s) URL. Used by the
+    ///     front-end for Nexus download pages and by the manual-download fallback.
+    ///     Returns false only when the activity has no content view yet.
+    /// </summary>
+    public bool OpenInAppBrowser(string url)
+    {
+        if (_rootLayout is null)
+            return false;
+
+        _inAppBrowser ??= new InAppBrowserOverlay(this);
+        _inAppBrowser.Open(url);
+        return true;
+    }
+
+    /// <summary>
+    /// Tints the system-bar strip to the front-end app surface color and picks
+    /// light/dark system-bar icons. The WebView sits below the status bar, so
+    /// the visible strip is the root layout background painted by this call.
+    /// </summary>
+    public void SetSystemBars(string hexColor, bool lightBars)
+    {
+        Android.Graphics.Color color;
+        try
+        {
+            color = Android.Graphics.Color.ParseColor(hexColor);
+        }
+        catch (Exception)
+        {
+            //Malformed theme color from the front-end: keep the current chrome.
+            return;
+        }
+
+        RunOnUiThread(() =>
+        {
+            _rootLayout?.SetBackgroundColor(color);
+            if (Window is null)
+            {
+                return;
+            }
+
+            Window.SetStatusBarColor(color);
+            Window.SetNavigationBarColor(color);
+            var controller = AndroidX.Core.View.WindowCompat.GetInsetsController(Window, _webView ?? Window.DecorView);
+            controller.AppearanceLightStatusBars = lightBars;
+            controller.AppearanceLightNavigationBars = lightBars;
+        });
+    }
+
     /// <summary>Pushes one event frame (<c>{event, payload}</c>) to the front-end dispatch sink.</summary>
     public void DispatchEventToJs(string eventName, string payloadJson)
     {
@@ -114,16 +217,37 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         EvaluateJavaScript("window.__modforgeDispatch && window.__modforgeDispatch(" + frame + ");");
     }
 
+    /// <summary>Set by the front-end through <see cref="ModForgeBridge.BackHandled" /> when it closed an overlay for this back press.</summary>
+    volatile bool _backHandled;
+
+    /// <summary>Acknowledgement from the front-end for the most recent <c>android:back</c> event.</summary>
+    public void MarkBackHandled()
+    {
+        _backHandled = true;
+    }
+
     public override void OnBackPressed()
     {
-        if (_webView?.CanGoBack() == true)
-        {
-            _webView.GoBack();
+        // The in-app browser owns back while open: WebView history first, then close.
+        if (_inAppBrowser?.HandleBack() == true)
             return;
-        }
 
-        //Back returns to the Android home screen; the app keeps running in background.
-        MoveTaskToBack(true);
+        // Ask the SPA to close its topmost overlay (mobile pages); if it claims
+        // the back press within the window we stay, otherwise move to background.
+        _backHandled = false;
+        DispatchEventToJs("android:back", "{}");
+        Task.Run(async () =>
+        {
+            await Task.Delay(150).ConfigureAwait(false);
+            RunOnUiThread(() =>
+            {
+                if (!_backHandled)
+                {
+                    //Back returns to the Android home screen; the app keeps running in background.
+                    MoveTaskToBack(true);
+                }
+            });
+        });
     }
 
     /// <summary>Opens the SAF document picker; resolves with the picked URIs, or null when cancelled.</summary>

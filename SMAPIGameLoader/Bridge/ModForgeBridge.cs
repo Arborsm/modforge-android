@@ -25,6 +25,9 @@ public sealed class ModForgeBridge : Java.Lang.Object
     public const string PickFileCommand = "android:pick_file";
     public const string PickDirectoryCommand = "android:pick_dir";
     public const string CreateDocumentCommand = "android:create_document";
+    public const string SetSystemBarsCommand = "android:set_system_bars";
+    public const string OpenInAppBrowserCommand = "android:open_in_app_browser";
+    public const string AiRequestCommand = "android:ai_request";
 
     /// <summary>Single bridge instance; services use it to push event frames.</summary>
     public static ModForgeBridge? Instance { get; private set; }
@@ -49,6 +52,17 @@ public sealed class ModForgeBridge : Java.Lang.Object
     {
         //Entry point only enqueues; blocking IO/network happen on the worker.
         _queue.TryAdd(new PendingCommand(command ?? string.Empty, argsJson ?? string.Empty, callbackId ?? string.Empty));
+    }
+
+    /// <summary>
+    ///     Front-end acknowledgement for an <c>android:back</c> event: the SPA closed its
+    ///     topmost overlay, so the activity must not move the task to the background.
+    /// </summary>
+    [JavascriptInterface]
+    [Java.Interop.Export("backHandled")]
+    public void BackHandled()
+    {
+        _activity.MarkBackHandled();
     }
 
     /// <summary>Pushes one host event frame to the front-end; callable from services.</summary>
@@ -97,9 +111,18 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 return await PickDirectoryAsync(args).ConfigureAwait(false);
             case CreateDocumentCommand:
                 return await CreateDocumentAsync(args).ConfigureAwait(false);
+            case SetSystemBarsCommand:
+                return SetSystemBars(args);
+            case OpenInAppBrowserCommand:
+                return OpenInAppBrowser(args);
+            case AiRequestCommand:
+                return await AiRequestAsync(args).ConfigureAwait(false);
             default:
                 if (BootstrapCommands.Handles(pending.Command))
                     return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
+                if (AiCommands.Handles(pending.Command))
+                    return await AiCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
 
                 return await DispatchLauncherCommandAsync(pending.Command, args).ConfigureAwait(false);
         }
@@ -149,6 +172,100 @@ public sealed class ModForgeBridge : Java.Lang.Object
         var mimeType = ResolveMimeType(args);
         var uri = await _activity.CreateDocumentAsync(mimeType, string.IsNullOrWhiteSpace(defaultPath) ? "export.bin" : defaultPath!).ConfigureAwait(false);
         return uri?.ToString();
+    }
+
+    JsonNode? SetSystemBars(JsonElement args)
+    {
+        var hex = args.TryGetProperty("hex", out var hexElement) ? hexElement.GetString() : null;
+        var lightBars = !args.TryGetProperty("lightBars", out var lightElement) || lightElement.ValueKind != JsonValueKind.False;
+        if (!string.IsNullOrWhiteSpace(hex))
+            _activity.SetSystemBars(hex!, lightBars);
+        return null;
+    }
+
+    JsonNode? OpenInAppBrowser(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "open_in_app_browser requires an absolute http(s) URL.");
+        if (!_activity.OpenInAppBrowser(url!))
+            throw new LauncherCommandException("unavailable", "The in-app browser is not ready yet.");
+        return null;
+    }
+
+    /// <summary>
+    ///     Authenticated HTTP proxy for the front-end's self-contained AI calls
+    ///     (e.g. game-log error analysis). Callers either pass explicit headers or
+    ///     a saved workbench AI profileId, in which case the bridge attaches the
+    ///     stored credential server-side so keys never reach JavaScript. Only
+    ///     http(s) GET/POST are allowed and responses are capped at 1 MB.
+    /// </summary>
+    async Task<JsonNode?> AiRequestAsync(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url!.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "ai_request requires an absolute http(s) URL.");
+        var method = args.TryGetProperty("method", out var methodElement) ? methodElement.GetString() : null;
+        var useGet = string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase);
+        var usePost = !useGet && string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase);
+        if (!useGet && !usePost)
+            throw new LauncherCommandException("invalid_args", "ai_request only supports GET and POST.");
+
+        using var request = new System.Net.Http.HttpRequestMessage(
+            usePost ? System.Net.Http.HttpMethod.Post : System.Net.Http.HttpMethod.Get,
+            url);
+        if (args.TryGetProperty("headers", out var headers) && headers.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var header in headers.EnumerateObject())
+            {
+                var value = header.Value.ValueKind == JsonValueKind.String ? header.Value.GetString() : null;
+                if (!string.IsNullOrEmpty(value))
+                    request.Headers.TryAddWithoutValidation(header.Name, value);
+            }
+        }
+
+        //A saved profile id resolves the credential on the native side; explicit
+        //caller headers win so custom auth stays possible.
+        var profileId = args.TryGetProperty("profileId", out var profileIdElement) && profileIdElement.ValueKind == JsonValueKind.String
+            ? profileIdElement.GetString()
+            : null;
+        if (!string.IsNullOrWhiteSpace(profileId) && !request.Headers.Contains("authorization") && !request.Headers.Contains("x-api-key"))
+        {
+            var profile = AiCommands.FindProfileWithKey(profileId!)
+                ?? throw new LauncherCommandException("not_found", $"AI profile '{profileId}' was not found or has no API key.");
+            var protocol = profile["protocol"]?.GetValue<string>() ?? string.Empty;
+            var apiKey = profile["apiKey"]?.GetValue<string>() ?? string.Empty;
+            if (protocol == "anthropic-messages")
+            {
+                request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            }
+            else
+            {
+                request.Headers.TryAddWithoutValidation("authorization", $"Bearer {apiKey}");
+            }
+        }
+
+        var body = args.TryGetProperty("body", out var bodyElement) && bodyElement.ValueKind == JsonValueKind.String
+            ? bodyElement.GetString()
+            : null;
+        if (usePost)
+            request.Content = new System.Net.Http.StringContent(body ?? string.Empty, Encoding.UTF8, "application/json");
+
+        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        using var response = await client.SendAsync(request).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        const int maxResponseChars = 1_000_000;
+        if (responseText.Length > maxResponseChars)
+            responseText = responseText.Substring(0, maxResponseChars);
+
+        return new JsonObject
+        {
+            ["statusCode"] = (int)response.StatusCode,
+            ["body"] = responseText,
+        };
     }
 
     async Task<string> CopyToSandboxAsync(Android.Net.Uri uri)

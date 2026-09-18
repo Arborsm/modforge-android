@@ -37,14 +37,14 @@ public sealed class SmapiService
     {
         return Task.Run<JsonElement?>(async () =>
         {
-            if (SMAPIInstaller.IsInstalled == false)
-                throw new LauncherCommandException("smapi_missing", "SMAPI is not installed yet. Install SMAPI before checking for updates.");
-
-            var installedVersion = SMAPIInstaller.GetCurrentVersion()?.ToString() ?? "0.0.0";
+            //A missing SMAPI is a normal "update available" state on Android: the card
+            //offers the fresh-install download instead of failing the whole check.
+            var installed = SMAPIInstaller.IsInstalled;
+            var installedVersion = installed ? SMAPIInstaller.GetCurrentVersion()?.ToString() ?? "0.0.0" : "0.0.0";
             var gameVersion = StardewApkTool.CurrentGameVersion?.ToString() ?? string.Empty;
 
             var release = await LoadLatestReleaseAsync().ConfigureAwait(false);
-            var updateAvailable = LauncherJsonHelper.VersionIsNewer(installedVersion, release.Version);
+            var updateAvailable = !installed || LauncherJsonHelper.VersionIsNewer(installedVersion, release.Version);
 
             var result = new SmapiUpdateCheckResult
             {

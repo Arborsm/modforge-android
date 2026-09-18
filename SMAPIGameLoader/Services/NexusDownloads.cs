@@ -236,7 +236,7 @@ public sealed partial class NexusService
         return 0;
     }
 
-    static string ResolveDownloadDirectory(string? configuredPath)
+    internal static string ResolveDownloadDirectory(string? configuredPath)
     {
         var candidate = configuredPath?.Trim().Trim('"');
         if (!string.IsNullOrEmpty(candidate))
@@ -247,9 +247,15 @@ public sealed partial class NexusService
 
     void OpenManualDownloadPage(long fileId)
     {
+        var url = string.Format(NexusClient.DownloadPopupUrlTemplate, fileId);
+
+        //Prefer the built-in browser so the file lands in the app's download
+        //pipeline; fall back to the external browser on hosts without it.
+        if (LauncherActivity.Instance?.OpenInAppBrowser(url) == true)
+            return;
+
         try
         {
-            var url = string.Format(NexusClient.DownloadPopupUrlTemplate, fileId);
             var intent = new Intent(Intent.ActionView, Android.Net.Uri.Parse(url));
             intent.AddFlags(ActivityFlags.NewTask);
             Android.App.Application.Context.StartActivity(intent);
@@ -260,7 +266,7 @@ public sealed partial class NexusService
         }
     }
 
-    static string SanitizeDownloadFileName(string name)
+    internal static string SanitizeDownloadFileName(string name)
     {
         var builder = new System.Text.StringBuilder(name.Length);
         foreach (var character in name)
@@ -270,7 +276,7 @@ public sealed partial class NexusService
         return result.Length > 0 ? result : "download.zip";
     }
 
-    static string UniqueDownloadPath(string path)
+    internal static string UniqueDownloadPath(string path)
     {
         if (!File.Exists(path))
             return path;
