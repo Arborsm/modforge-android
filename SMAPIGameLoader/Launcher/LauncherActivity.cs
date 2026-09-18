@@ -39,6 +39,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     WebViewAssetLoader? _assetLoader;
     ModForgeBridge? _bridge;
     Android.Widget.FrameLayout? _rootLayout;
+    InAppBrowserOverlay? _inAppBrowser;
 
     const int PickFileRequestCode = 9101;
     const int PickDirectoryRequestCode = 9102;
@@ -153,6 +154,24 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         });
     }
 
+    /// <summary>Root layout hosting the app WebView; the in-app browser overlay mounts on top of it.</summary>
+    internal Android.Widget.FrameLayout? RootLayout => _rootLayout;
+
+    /// <summary>
+    ///     Opens the built-in in-app browser overlay at an http(s) URL. Used by the
+    ///     front-end for Nexus download pages and by the manual-download fallback.
+    ///     Returns false only when the activity has no content view yet.
+    /// </summary>
+    public bool OpenInAppBrowser(string url)
+    {
+        if (_rootLayout is null)
+            return false;
+
+        _inAppBrowser ??= new InAppBrowserOverlay(this);
+        _inAppBrowser.Open(url);
+        return true;
+    }
+
     /// <summary>
     /// Tints the system-bar strip to the front-end app surface color and picks
     /// light/dark system-bar icons. The WebView sits below the status bar, so
@@ -206,6 +225,10 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
     public override void OnBackPressed()
     {
+        // The in-app browser owns back while open: WebView history first, then close.
+        if (_inAppBrowser?.HandleBack() == true)
+            return;
+
         // Ask the SPA to close its topmost overlay (mobile pages); if it claims
         // the back press within the window we stay, otherwise move to background.
         _backHandled = false;

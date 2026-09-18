@@ -26,6 +26,7 @@ public sealed class ModForgeBridge : Java.Lang.Object
     public const string PickDirectoryCommand = "android:pick_dir";
     public const string CreateDocumentCommand = "android:create_document";
     public const string SetSystemBarsCommand = "android:set_system_bars";
+    public const string OpenInAppBrowserCommand = "android:open_in_app_browser";
 
     /// <summary>Single bridge instance; services use it to push event frames.</summary>
     public static ModForgeBridge? Instance { get; private set; }
@@ -111,6 +112,8 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 return await CreateDocumentAsync(args).ConfigureAwait(false);
             case SetSystemBarsCommand:
                 return SetSystemBars(args);
+            case OpenInAppBrowserCommand:
+                return OpenInAppBrowser(args);
             default:
                 if (BootstrapCommands.Handles(pending.Command))
                     return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
@@ -171,6 +174,17 @@ public sealed class ModForgeBridge : Java.Lang.Object
         var lightBars = !args.TryGetProperty("lightBars", out var lightElement) || lightElement.ValueKind != JsonValueKind.False;
         if (!string.IsNullOrWhiteSpace(hex))
             _activity.SetSystemBars(hex!, lightBars);
+        return null;
+    }
+
+    JsonNode? OpenInAppBrowser(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "open_in_app_browser requires an absolute http(s) URL.");
+        if (!_activity.OpenInAppBrowser(url!))
+            throw new LauncherCommandException("unavailable", "The in-app browser is not ready yet.");
         return null;
     }
 

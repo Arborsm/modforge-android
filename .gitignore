@@ -367,3 +367,5 @@ FodyWeavers.xsd
 # local game-dll extraction harness output (never commit game-derived data)
 .tmp-extract/store.blob
 .tmp-extract/manifest.xml
+
+.tmp-extract/
