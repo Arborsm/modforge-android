@@ -14,6 +14,11 @@ on:
         default: feat/android-host
   repository_dispatch:
 
+permissions:
+  # The rolling ci-latest pre-release step uploads the built APK as a release
+  # asset so downloads are the APK itself instead of an artifact zip.
+  contents: write
+
 # The compile step needs three game-derived reference DLLs that cannot be
 # committed (ModForge NOTICE: zero game files). They are downloaded from the
 # PRIVATE Arborsm/modforge-private-libs release `dependencies-dll` using a
@@ -150,6 +155,9 @@ jobs:
           ANDROID_HOME: /usr/local/lib/android/sdk
         run: dotnet build SMAPIGameLoader/SMAPIGameLoader.csproj -c Release -p:AndroidSdkDirectory="$ANDROID_HOME"
 
+      - name: Stamp this run
+        run: echo "APK_STAMP=$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_ENV"
+
       - name: Verify embedded Mono runtime is the reflection-unlocked build
         run: |
           python3 - <<'PY'
@@ -160,9 +168,34 @@ jobs:
           assert info.file_size != 3110072, 'stock Mono runtime embedded - the pack patch did not apply'
           PY
 
+      # upload-artifact always wraps files in a zip, so the direct APK download
+      # lives on a rolling ci-latest pre-release with a timestamped asset name;
+      # each successful push adds one asset and prunes down to the newest five.
+      - name: Publish APK to the rolling ci-latest pre-release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk="$(ls SMAPIGameLoader/bin/Release/net9.0-android/*-Signed.apk)"
+          asset="modforge-android-${APK_STAMP}-run${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
+          if ! gh release view ci-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create ci-latest --repo "$GITHUB_REPOSITORY" \
+              --title "CI latest APK" \
+              --notes "Rolling CI build for branch \`${GITHUB_REF_NAME}\`. The newest APK asset reflects the latest successful run; older assets are pruned to the last five." \
+              --prerelease
+          fi
+          gh release upload ci-latest "$apk#$asset" --repo "$GITHUB_REPOSITORY"
+          gh release view ci-latest --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets | sort_by(.createdAt) | reverse | .[5:] | .[].name' \
+            | while read -r old_asset; do
+                gh release delete-asset ci-latest "$old_asset" --repo "$GITHUB_REPOSITORY" --yes
+              done
+          echo "published APK asset: $asset"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: modforge-android-apk
+          name: modforge-android-apk-${{ github.run_number }}-${{ env.APK_STAMP }}
           path: SMAPIGameLoader/bin/Release/net9.0-android/*-Signed.apk
           if-no-files-found: error
