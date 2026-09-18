@@ -236,13 +236,28 @@ public sealed partial class NexusService
         return 0;
     }
 
+    internal const string DownloadLocationDownloadsToken = "@downloads";
+    internal const string DownloadLocationPickedToken = "@picked";
+
     internal static string ResolveDownloadDirectory(string? configuredPath)
     {
         var candidate = configuredPath?.Trim().Trim('"');
-        if (!string.IsNullOrEmpty(candidate))
+        if (string.IsNullOrEmpty(candidate))
+            return SandboxFileTool.DownloadFilesDir;
+
+        // Sandbox-folder tokens the front-end offers on the Android host.
+        if (string.Equals(candidate, DownloadLocationPickedToken, StringComparison.Ordinal))
+            return SandboxFileTool.PickedFilesDir;
+        if (string.Equals(candidate, DownloadLocationDownloadsToken, StringComparison.Ordinal))
+            return SandboxFileTool.DownloadFilesDir;
+
+        // Only absolute sandbox paths are writable on API 30+; anything else
+        // (e.g. a desktop path synced through launcher settings) falls back
+        // instead of failing the download at directory-creation time.
+        if (candidate.StartsWith("/", StringComparison.Ordinal))
             return candidate;
 
-        return SandboxFileTool.PickedFilesDir;
+        return SandboxFileTool.DownloadFilesDir;
     }
 
     void OpenManualDownloadPage(long fileId)
