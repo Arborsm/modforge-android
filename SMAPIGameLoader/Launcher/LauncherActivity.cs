@@ -71,6 +71,23 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         SetupWebView();
     }
 
+    /// <summary>
+    /// The game/SMAPI activity runs in its own task without finishing the
+    /// launcher, so returning from a game session resumes this activity
+    /// instead of remounting the web app. Forward a resume event so the
+    /// front-end can re-run mount-time logic (e.g. the game-log error watch)
+    /// exactly once per finished session. The first resume (activity start)
+    /// fires before the SPA attaches listeners and is harmlessly missed.
+    /// </summary>
+    protected override void OnResume()
+    {
+        base.OnResume();
+        if (_bridge is not null)
+        {
+            DispatchEventToJs("android:resume", "{}");
+        }
+    }
+
     private void SetupWebView()
     {
         _assetLoader = new WebViewAssetLoader.Builder()
