@@ -111,7 +111,7 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         settings.DomStorageEnabled = true;
         settings.AllowFileAccess = false;
         settings.CacheMode = CacheModes.Default;
-        _webView.SetWebViewClient(new AssetLoaderWebViewClient(_assetLoader));
+        _webView.SetWebViewClient(new AssetLoaderWebViewClient(_assetLoader, this));
         _bridge = new ModForgeBridge(this);
         _webView.AddJavascriptInterface(_bridge, "modforgeBridge");
 
@@ -151,18 +151,34 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 
         public AndroidX.Core.View.WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, AndroidX.Core.View.WindowInsetsCompat insets)
         {
-            // SystemBars (not just StatusBars): the bottom padding lifts the
-            // WebView above the gesture/3-button nav bar, otherwise every
-            // bottom-anchored chrome (bottom nav, pagination) lands under it.
+            // Status bar: pad the WebView below it. Gesture/nav bar: the app extends
+            // edge-to-edge behind it — the real inset reaches the front-end as the
+            // --android-system-inset-bottom CSS variable so bottom-anchored chrome
+            // (bottom nav, pagination, sheets) lifts itself instead of floating
+            // over a dead white strip.
             var bars = insets.GetInsets(AndroidX.Core.View.WindowInsetsCompat.Type.SystemBars());
             Android.Util.Log.Info("MODFORGE", $"SystemBarInsetsListener fired, top={bars?.Top}, bottom={bars?.Bottom}");
             if (bars != null)
             {
-                v.SetPadding(bars.Left, bars.Top, bars.Right, bars.Bottom);
+                v.SetPadding(bars.Left, bars.Top, bars.Right, 0);
+                var density = v.Resources?.DisplayMetrics?.Density ?? 1f;
+                _activity._androidSystemInsetBottomCss = bars.Bottom / density;
+                _activity.PushAndroidSystemInsetToJs();
             }
 
             return insets;
         }
+    }
+
+    float _androidSystemInsetBottomCss;
+
+    /// <summary>Pushes the bottom system-bar inset (in CSS pixels) to the front-end as a
+    /// document-level CSS variable. This WebView never reports
+    /// env(safe-area-inset-bottom), so bottom chrome consumes the variable instead.</summary>
+    internal void PushAndroidSystemInsetToJs()
+    {
+        var css = _androidSystemInsetBottomCss.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        EvaluateJavaScript("document.documentElement && document.documentElement.style.setProperty('--android-system-inset-bottom','" + css + "px');");
     }
 
     /// <summary>Runs one JS snippet on the UI thread; the bridge uses it to push response/event frames.</summary>
@@ -504,10 +520,20 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     class AssetLoaderWebViewClient : WebViewClient
     {
         readonly WebViewAssetLoader _assetLoader;
+        readonly LauncherActivity _activity;
 
-        public AssetLoaderWebViewClient(WebViewAssetLoader assetLoader)
+        public AssetLoaderWebViewClient(WebViewAssetLoader assetLoader, LauncherActivity activity)
         {
             _assetLoader = assetLoader;
+            _activity = activity;
+        }
+
+        public override void OnPageFinished(WebView? view, string? url)
+        {
+            base.OnPageFinished(view, url);
+            // The inset push from the insets listener can land before the page's
+            // document exists; re-apply once each document is ready.
+            _activity.PushAndroidSystemInsetToJs();
         }
 
         public override WebResourceResponse? ShouldInterceptRequest(WebView? view, IWebResourceRequest? request)
