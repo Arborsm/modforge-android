@@ -78,6 +78,12 @@
 		</Reference>
 		<Reference Include="MonoGame.Framework">
 			<HintPath>..\..\SMAPI-Android-1.6\src\DependenciesDll\MonoGame.Framework.dll</HintPath>
+			<!-- Packaged (the linker needs to resolve it), but never the copy the
+			     runtime actually uses: GameAssemblyManager.VerifyAssemblies extracts
+			     the loader store FIRST and the game store LAST, so the game's own
+			     MonoGame always wins in "Stardew Assemblies", and LoadAssembly binds
+			     that one. Game-version skew here caused MissingMethodException
+			     (GameWindow.add_TextInput) on 1.6.15.3. -->
 		</Reference>
 		<Reference Include="StardewValley">
 			<HintPath>..\..\SMAPI-Android-1.6\src\DependenciesDll\StardewValley.dll</HintPath>
