@@ -127,6 +127,9 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 if (MachineTranslationCommands.Handles(pending.Command))
                     return await MachineTranslationCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
 
+                if (LocalizationSettingsCommands.Handles(pending.Command))
+                    return await LocalizationSettingsCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
                 return await DispatchLauncherCommandAsync(pending.Command, args).ConfigureAwait(false);
         }
     }
