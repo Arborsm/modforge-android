@@ -24,7 +24,7 @@ namespace SMAPIGameLoader.Launcher;
     Theme = "@style/AppTheme",
     AlwaysRetainTaskState = true,
     LaunchMode = LaunchMode.SingleInstance,
-    ScreenOrientation = Android.Content.PM.ScreenOrientation.FullSensor
+    ScreenOrientation = Android.Content.PM.ScreenOrientation.Portrait
 )]
 public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
 {
