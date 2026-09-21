@@ -66,19 +66,44 @@ internal static class LauncherJsonHelper
             if (!File.Exists(path))
                 return null;
 
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            return document.RootElement.Clone();
-        }
-        catch (Exception)
-        {
+            var bytes = File.ReadAllBytes(path);
             try
             {
-                using var document = JsonDocument.Parse(SanitizeRelaxedJson(File.ReadAllText(path)));
+                using var document = JsonDocument.Parse(bytes);
                 return document.RootElement.Clone();
             }
             catch (Exception)
             {
-                return null;
+                // Some mod manifests are authored in GBK on Chinese Windows; ReadAllText
+                // would silently turn them into replacement glyphs, so retry legacy-encoded.
+                var text = DecodeWithLegacyFallback(bytes);
+                using var document = JsonDocument.Parse(SanitizeRelaxedJson(text));
+                return document.RootElement.Clone();
+            }
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Decodes bytes as strict UTF-8, falling back to GB18030 for legacy-encoded files.</summary>
+    internal static string DecodeWithLegacyFallback(byte[] bytes)
+    {
+        try
+        {
+            return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes);
+        }
+        catch (System.Text.DecoderFallbackException)
+        {
+            try
+            {
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                return System.Text.Encoding.GetEncoding("GB18030").GetString(bytes);
+            }
+            catch (Exception)
+            {
+                return System.Text.Encoding.UTF8.GetString(bytes);
             }
         }
     }
