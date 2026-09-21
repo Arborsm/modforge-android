@@ -36,6 +36,28 @@ internal sealed class NexusClient
 
     public bool HasApiKey => _apiKey is not null;
 
+    // Latest X-RL-* rate-limit headers seen on any Nexus REST response; the
+    // validate command reports these so the account card shows real quotas
+    // instead of zeros. Headers arrive on every REST call, not just validate.
+    static long? _dailyRemaining, _hourlyRemaining, _dailyResetAt, _hourlyResetAt;
+
+    public (long? DailyRemaining, long? HourlyRemaining, long? DailyResetAt, long? HourlyResetAt) RateLimitSnapshot
+        => (_dailyRemaining, _hourlyRemaining, _dailyResetAt, _hourlyResetAt);
+
+    static void CaptureRateLimitHeaders(HttpResponseMessage response)
+    {
+        _dailyRemaining = ParseInt64Header(response, "X-RL-Daily-Remaining") ?? _dailyRemaining;
+        _hourlyRemaining = ParseInt64Header(response, "X-RL-Hourly-Remaining") ?? _hourlyRemaining;
+        _dailyResetAt = ParseInt64Header(response, "X-RL-Daily-Reset") ?? _dailyResetAt;
+        _hourlyResetAt = ParseInt64Header(response, "X-RL-Hourly-Reset") ?? _hourlyResetAt;
+    }
+
+    static long? ParseInt64Header(HttpResponseMessage response, string name)
+        => response.Headers.TryGetValues(name, out var values)
+            && long.TryParse(values.FirstOrDefault()?.Trim(), out var value)
+                ? value
+                : null;
+
     public string RequireApiKey(string missingMessage)
     {
         if (_apiKey is null)
@@ -77,6 +99,7 @@ internal sealed class NexusClient
         try
         {
             var response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellation).ConfigureAwait(false);
+            CaptureRateLimitHeaders(response);
             var body = response.Content is null ? null : await response.Content.ReadAsStringAsync(cancellation).ConfigureAwait(false);
             return new Attempt(response, body, null);
         }
