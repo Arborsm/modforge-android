@@ -11,28 +11,41 @@ namespace SMAPIGameLoader.Game;
 
 internal static class NativeLibManager
 {
-    static nint Load_libLZ4()
+    static nint LoadGameLib(string fileName)
     {
-        nint num = FuncLoader.LoadLibrary("liblwjgl_lz4.so");
+        nint num = FuncLoader.LoadLibrary(fileName);
         if (num == IntPtr.Zero)
         {
-            string folderPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal);
-            string directoryName = Path.GetDirectoryName(folderPath);
-            string libname = Path.Combine(directoryName, "lib", "liblwjgl_lz4.so");
-            num = FuncLoader.LoadLibrary(libname);
+            var libPath = Path.Combine(GameAssemblyManager.GameNativeLibDir, fileName);
+            if (File.Exists(libPath))
+                num = FuncLoader.LoadLibrary(libPath);
         }
         return num;
     }
+
     public static void Loads()
     {
         try
         {
+            //Native bindings shipped inside the game APK are invisible to this
+            //process on extractNativeLibs=false installs. Preload the copies
+            //VerifyLibs unpacked — once a library is loaded, every later
+            //bare-name dlopen (LZ4 probe, MonoGame audio/PNG init) resolves
+            //against it instead of dying with DllNotFound/NullReference.
+            var lz4 = LoadGameLib("liblwjgl_lz4.so");
+            if (lz4 == IntPtr.Zero)
+                Console.WriteLine("warn: liblwjgl_lz4 preload returned null; probing anyway");
             int b = LZ4.CompressBound(10);
+            LoadGameLib("libopenal32.so");
+            LoadGameLib("libstb_png_writer.so");
             Console.WriteLine("done setup native libs");
         }
         catch (Exception ex)
         {
-            ErrorDialogTool.Show(ex);
+            //Non-fatal sanity probe: on x86_64 hosts (emulator) the game's arm64
+            //native libs can never load, and the game still boots — a scary
+            //error dialog here only reads as a crash. Log and move on.
+            Console.WriteLine("native lib probe failed (non-fatal): " + ex.Message);
         }
     }
 }

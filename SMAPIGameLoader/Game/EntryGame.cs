@@ -44,6 +44,9 @@ internal static class EntryGame
         }
         catch (Exception ex)
         {
+            // The toast alone is invisible in logs; mirror failures to logcat so
+            // launch aborts are diagnosable without a debugger attached.
+            Console.WriteLine("Error:LaunchGameActivity: " + ex);
             ToastNotifyTool.Notify("Error:LaunchGameActivity: " + ex.ToString());
         }
     }
@@ -51,9 +54,10 @@ internal static class EntryGame
     static void StartSMAPIActivity(Activity launcherActivity)
     {
         var intent = new Intent(launcherActivity, typeof(SMAPIActivity));
-        intent.AddFlags(ActivityFlags.ClearTask);
         intent.AddFlags(ActivityFlags.NewTask);
         launcherActivity.StartActivity(intent);
-        launcherActivity.Finish();
+        //The launcher activity stays in its own task: when the game activity
+        //exits or fails to boot, the user falls back to the launcher instead
+        //of being dropped on the home screen (which reads as an instant crash).
     }
 }

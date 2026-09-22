@@ -16,7 +16,9 @@ public static class LauncherRequirements
     /// <summary>Gates document served from the fork's default branch.</summary>
     public const string RemoteUrl = "https://raw.githubusercontent.com/Arborsm/modforge-android/master/version-gates.json";
 
-    public static readonly Version DefaultMinimumGameVersion = new(1, 6, 15, 3);
+    //1.6.15.0 is the first 1.6.15 Android rollout (merged sideload APKs report this
+    //version); the 1.6.15 content build is identical across the patch rollups.
+    public static readonly Version DefaultMinimumGameVersion = new(1, 6, 15, 0);
     public static readonly Version DefaultMinimumSmapiVersion = new(4, 0, 0);
 
     static volatile Version? _minimumGameVersion;

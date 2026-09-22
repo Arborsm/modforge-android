@@ -22,6 +22,17 @@ public sealed class InstallService
     const string ManifestFileName = "manifest.json";
     const string BackupIdPrefix = "install-";
 
+    static readonly System.Text.Encoding LegacyArchiveEntryEncoding = RegisterLegacyEncoding();
+
+    static System.Text.Encoding RegisterLegacyEncoding()
+    {
+        // Chinese zip tools write entry names (and some manifests) in GBK without
+        // the UTF-8 flag; passing GB18030 as the entry-name encoding decodes only
+        // unflagged entries, UTF-8-flagged ones still read as UTF-8.
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        return System.Text.Encoding.GetEncoding("GB18030");
+    }
+
     static string BackupRoot => Path.Combine(FileTool.ExternalFilesDir, "ModForge", "launcher", "backups");
 
     // --- commands ---
@@ -691,7 +702,7 @@ public sealed class InstallService
     /// <summary>Expands a zip archive under destination with the desktop entry-path sanitization rules.</summary>
     static void ExpandZipArchive(string archivePath, string destination)
     {
-        using var archive = ZipFile.OpenRead(archivePath);
+        using var archive = new System.IO.Compression.ZipArchive(File.OpenRead(archivePath), System.IO.Compression.ZipArchiveMode.Read, leaveOpen: false, LegacyArchiveEntryEncoding);
         foreach (var entry in archive.Entries)
         {
             var relativePath = SanitizeArchiveEntryPath(archivePath, entry.FullName);

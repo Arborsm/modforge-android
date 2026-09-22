@@ -78,6 +78,7 @@ public sealed partial class NexusService
                 }
             }
 
+            var quota = _client.RateLimitSnapshot;
             var result = new NexusValidateApiKeyResult
             {
                 UserName = userName,
@@ -85,6 +86,10 @@ public sealed partial class NexusService
                 ProfileUrl = userId is > 0 ? $"https://www.nexusmods.com/users/{userId}" : null,
                 IsPremium = NexusJson.Bool(payload, "is_premium") ?? false,
                 IsLifetimePremium = NexusJson.Bool(payload, "is_lifetime_premium"),
+                DailyRemaining = quota.DailyRemaining,
+                HourlyRemaining = quota.HourlyRemaining,
+                DailyResetAt = quota.DailyResetAt,
+                HourlyResetAt = quota.HourlyResetAt,
             };
             return JsonSerializer.SerializeToElement(result, LauncherJsonContext.Default.NexusValidateApiKeyResult);
         });

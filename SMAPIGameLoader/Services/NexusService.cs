@@ -214,12 +214,12 @@ public sealed partial class NexusService
         }
         """;
 
-    readonly NexusClient _client;
-
-    public NexusService()
-    {
-        _client = new NexusClient(LauncherRuntimeService.LoadOrCreateSettings().NexusApiKey);
-    }
+    // The client must follow the settings file, not the process start: the
+    // services singleton is built before any SSO completes, so a key captured
+    // in the constructor stays null for the whole session ("API unavailable"
+    // until restart). Re-read per command — settings.json is tiny and the
+    // bridge already serializes commands.
+    NexusClient _client => new NexusClient(LauncherRuntimeService.LoadOrCreateSettings().NexusApiKey);
 
     static string? TrimOrNull(string? value)
     {

@@ -321,7 +321,16 @@ public sealed partial class NexusService
 
     static void WritePartialMetadata(string archivePath, PartialDownloadMetadata metadata)
     {
-        LauncherJsonHelper.WriteJsonFile(PartialMetaPathFor(archivePath), JsonSerializer.SerializeToNode(metadata, LauncherJsonContext.Default.JsonObject)!);
+        // Serialize as a plain JsonObject: serializing the record with the
+        // JsonObject context crashes with InvalidCastException and kills every
+        // download right after the first bytes land.
+        var node = new JsonObject
+        {
+            ["versionIdentity"] = metadata.VersionIdentity,
+            ["etag"] = metadata.ETag,
+            ["lastModified"] = metadata.LastModified,
+        };
+        LauncherJsonHelper.WriteJsonFile(PartialMetaPathFor(archivePath), node);
     }
 
     static void ClearPartialDownload(string archivePath)

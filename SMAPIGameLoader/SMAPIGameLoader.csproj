@@ -49,6 +49,7 @@
 		<PackageReference Include="SkiaSharp" Version="2.88.9" />
 		<PackageReference Include="System.IO.Compression" Version="4.3.0" />
 		<PackageReference Include="SharpCompress" Version="0.38.0" />
+		<PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.9" />
 		<PackageReference Include="Xamarin.AndroidX.AppCompat" Version="1.7.0.4" />
 		<PackageReference Include="Xamarin.AndroidX.WebKit" Version="1.8.0.3" />
 		<PackageReference Include="Xamarin.Essentials" Version="1.7.7" />
@@ -78,6 +79,12 @@
 		</Reference>
 		<Reference Include="MonoGame.Framework">
 			<HintPath>..\..\SMAPI-Android-1.6\src\DependenciesDll\MonoGame.Framework.dll</HintPath>
+			<!-- Packaged (the linker needs to resolve it), but never the copy the
+			     runtime actually uses: GameAssemblyManager.VerifyAssemblies extracts
+			     the loader store FIRST and the game store LAST, so the game's own
+			     MonoGame always wins in "Stardew Assemblies", and LoadAssembly binds
+			     that one. Game-version skew here caused MissingMethodException
+			     (GameWindow.add_TextInput) on 1.6.15.3. -->
 		</Reference>
 		<Reference Include="StardewValley">
 			<HintPath>..\..\SMAPI-Android-1.6\src\DependenciesDll\StardewValley.dll</HintPath>
