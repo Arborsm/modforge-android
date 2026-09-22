@@ -44,6 +44,9 @@ internal static class EntryGame
         }
         catch (Exception ex)
         {
+            // The toast alone is invisible in logs; mirror failures to logcat so
+            // launch aborts are diagnosable without a debugger attached.
+            Console.WriteLine("Error:LaunchGameActivity: " + ex);
             ToastNotifyTool.Notify("Error:LaunchGameActivity: " + ex.ToString());
         }
     }

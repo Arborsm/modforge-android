@@ -50,10 +50,34 @@ internal class GameAssemblyManager
             }
             foreach (var asm in store.Assemblies)
             {
+                // The game store's bundled BCL is trimmed to the game's own usage:
+                // its System.* facades forward only a few hundred types (the full
+                // runtime facade forwards ~900), so overwriting the loader store's
+                // untrimmed BCL with them breaks every member SMAPI's mod loader
+                // resolves through those facades (Cecil follows the reference
+                // scope "System.Runtime" into a facade that forwards nothing and
+                // reports core APIs like IList.Contains as missing). BCL always
+                // comes from the loader store; the game store only wins the
+                // game-domain assemblies the runtime API is built against
+                // (StardewValley, MonoGame, bundled third-party).
+                if (IsFrameworkAssemblyName(asm.Name.Length > 0 ? asm.Name : asm.DllName))
+                    continue;
                 asm.ExtractImage(assembliesOutputDirPath);
             }
             Console.WriteLine("done clone stardew assemblies");
         }
+    }
+
+    /// <summary>True for BCL/framework assemblies (System.*, Microsoft.*, mscorlib, netstandard)
+    /// whose full untrimmed copies must come from the loader store, never the game's trimmed ones.</summary>
+    static bool IsFrameworkAssemblyName(string name)
+    {
+        var shortName = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            ? name[..^4]
+            : name;
+        return shortName.StartsWith("System.", StringComparison.Ordinal)
+            || shortName.StartsWith("Microsoft.", StringComparison.Ordinal)
+            || shortName is "mscorlib" or "netstandard" or "WindowsBase";
     }
     public static Assembly LoadAssembly(string dllFileName)
     {

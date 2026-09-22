@@ -208,6 +208,16 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         return true;
     }
 
+    /// <summary>Closes the in-app browser overlay if one is open (SSO completion path).</summary>
+    public void CloseInAppBrowser()
+    {
+        if (_inAppBrowser is null)
+            return;
+
+        _inAppBrowser.Close();
+        _inAppBrowser = null;
+    }
+
     /// <summary>
     /// Tints the system-bar strip to the front-end app surface color and picks
     /// light/dark system-bar icons. The WebView sits below the status bar, so

@@ -63,7 +63,13 @@ public sealed class LauncherRuntimeService
         return Task.Run<JsonElement?>(() =>
         {
             var parsed = LibraryService.Deserialize(request, LauncherJsonContext.Default.SaveLauncherSettingsRequest);
-            var settings = SaveSettings(parsed);
+            // System.Text.Json maps a JSON null to a C# null JsonElement?, so the
+            // tri-state "clear the key" intent would be indistinguishable from
+            // "field absent" after deserialization — recover it from the raw payload.
+            var clearNexusApiKey = request.ValueKind == JsonValueKind.Object
+                && request.TryGetProperty("nexusApiKey", out var keyElement)
+                && keyElement.ValueKind == JsonValueKind.Null;
+            var settings = SaveSettings(parsed, clearNexusApiKey);
             return JsonSerializer.SerializeToElement(settings, LauncherJsonContext.Default.LauncherSettings);
         });
     }
@@ -188,7 +194,7 @@ public sealed class LauncherRuntimeService
         }
     }
 
-    internal static LauncherSettings SaveSettings(SaveLauncherSettingsRequest request)
+    internal static LauncherSettings SaveSettings(SaveLauncherSettingsRequest request, bool clearNexusApiKey = false)
     {
         var settings = LoadOrCreateSettings();
 
@@ -205,7 +211,12 @@ public sealed class LauncherRuntimeService
             settings.DownloadPath = downloadPath;
 
         //Tri-state API key: absent keeps, JSON null clears, a string sets.
-        if (request.NexusApiKey is { } apiKeyElement)
+        //(JSON null reaches us as the clearNexusApiKey flag — see SaveLauncherSettingsAsync.)
+        if (clearNexusApiKey)
+        {
+            settings.NexusApiKey = null;
+        }
+        else if (request.NexusApiKey is { } apiKeyElement)
         {
             if (apiKeyElement.ValueKind == JsonValueKind.Null)
             {

@@ -75,28 +75,39 @@ public sealed class ModForgeBridge : Java.Lang.Object
     {
         foreach (var pending in _queue.GetConsumingEnumerable())
         {
-            JsonObject frame;
-            try
-            {
-                var payload = await InvokeAsync(pending).ConfigureAwait(false);
-                frame = BuildFrame(pending.CallbackId, true, payload);
-            }
-            catch (LauncherCommandUnavailableException ex)
-            {
-                frame = ErrorFrame(pending.CallbackId, ex.Message);
-            }
-            catch (LauncherCommandException ex)
-            {
-                frame = ErrorFrame(pending.CallbackId, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("ModForgeBridge: command '" + pending.Command + "' failed: " + ex);
-                frame = ErrorFrame(pending.CallbackId, ex.Message);
-            }
-
-            DispatchFrame(frame);
+            // Commands run concurrently: the front-end fans out its cold-start
+            // reads (settings, library scan, diagnostics, update checks) and a
+            // single serial worker made every cheap read wait behind slow Nexus
+            // network calls — the library stayed empty for seconds after launch.
+            // Ordering is owned by the front-end: chains that depend on a prior
+            // command await its frame before sending the next one.
+            _ = Task.Run(() => ExecuteOneAsync(pending));
         }
+    }
+
+    async Task ExecuteOneAsync(PendingCommand pending)
+    {
+        JsonObject frame;
+        try
+        {
+            var payload = await InvokeAsync(pending).ConfigureAwait(false);
+            frame = BuildFrame(pending.CallbackId, true, payload);
+        }
+        catch (LauncherCommandUnavailableException ex)
+        {
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+        catch (LauncherCommandException ex)
+        {
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("ModForgeBridge: command '" + pending.Command + "' failed: " + ex);
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+
+        DispatchFrame(frame);
     }
 
     async Task<JsonNode?> InvokeAsync(PendingCommand pending)

@@ -86,6 +86,26 @@ public sealed class NexusSso
                     if (_generation != generation || _ssoId != threadSsoId)
                         return;
 
+                    // Persist BEFORE exposing "authorized": the front-end reloads
+                    // settings and re-validates the moment it sees the authorized
+                    // snapshot, so the key must already be on disk — otherwise it
+                    // reads the previous (empty) key and reports "API unavailable"
+                    // until the next cold start.
+                    if (apiKey is not null)
+                    {
+                        try
+                        {
+                            LauncherRuntimeService.SetNexusApiKey(apiKey);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("NexusSso: persisting the authorized key failed: " + ex);
+                            apiKey = null;
+                            failureKind = "persistFailed";
+                            failureMessage = ex.Message;
+                        }
+                    }
+
                     _connectionToken = null;
                     _running = false;
                     if (apiKey is not null)
@@ -102,12 +122,17 @@ public sealed class NexusSso
                     }
                 }
 
+                // The flow opened the in-app browser for authorization; settle it
+                // either way so the user lands back on the configuration page.
+                CloseAuthorizationBrowser();
+
                 if (apiKey is not null)
                 {
-                    //Persisting the authorized key is best-effort; authorization already succeeded.
+                    //Profile lookup is cosmetic (name/premium badge); authorization
+                    //already succeeded and the key is persisted.
                     try
                     {
-                        await ValidateAndStoreAsync(apiKey, generation, threadSsoId).ConfigureAwait(false);
+                        await ValidateProfileAsync(apiKey, generation, threadSsoId).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -368,6 +393,14 @@ public sealed class NexusSso
     {
         try
         {
+            // Prefer the in-app browser: the app stays in the foreground, so the
+            // SSO websocket is never background-frozen mid-handshake, and the
+            // overlay closes itself when the flow settles. The external browser
+            // is the fallback when the launcher view is not ready.
+            var activity = LauncherActivity.Instance;
+            if (activity?.OpenInAppBrowser(url) == true)
+                return;
+
             var intent = new Intent(Intent.ActionView, Android.Net.Uri.Parse(url));
             intent.AddFlags(ActivityFlags.NewTask);
             Android.App.Application.Context.StartActivity(intent);
@@ -378,7 +411,20 @@ public sealed class NexusSso
         }
     }
 
-    static async Task ValidateAndStoreAsync(string apiKey, ulong generation, string threadSsoId)
+    /// <summary>Closes the in-app browser the authorization step opened (no-op when absent).</summary>
+    static void CloseAuthorizationBrowser()
+    {
+        try
+        {
+            LauncherActivity.Instance?.CloseInAppBrowser();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("NexusSso: closing the authorization browser failed: " + ex.Message);
+        }
+    }
+
+    static async Task ValidateProfileAsync(string apiKey, ulong generation, string threadSsoId)
     {
         string? userName = null;
         bool isPremium = false;
@@ -405,7 +451,8 @@ public sealed class NexusSso
             //Validation is cosmetic; the authorization itself already succeeded.
         }
 
-        LauncherRuntimeService.SetNexusApiKey(apiKey);
+        // The key was already persisted before the status flipped to authorized;
+        // this pass only fills the profile badge.
         lock (StateLock)
         {
             if (_generation != generation || _ssoId != threadSsoId)

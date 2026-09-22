@@ -189,11 +189,18 @@ internal static class LauncherJsonHelper
         return result;
     }
 
+    /// <summary>Serializes JSON file writes: bridge commands run concurrently, and two
+    /// overlapping WriteAllText calls on the same file can interleave into corrupt JSON.</summary>
+    static readonly object WriteJsonFileLock = new();
+
     /// <summary>Writes pretty JSON with the trailing newline the desktop domain writes.</summary>
     public static void WriteJsonFile(string path, JsonNode node)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+        lock (WriteJsonFileLock)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+        }
     }
 
     /// <summary>
