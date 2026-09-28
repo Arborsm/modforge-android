@@ -1,0 +1,430 @@
+using Android.App;
+using Android.Webkit;
+using Android.Runtime;
+using LauncherActivity = SMAPIGameLoader.Launcher.LauncherActivity;
+using SMAPIGameLoader.Services;
+using SMAPIGameLoader.Tool;
+using System;
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
+
+namespace SMAPIGameLoader.Bridge;
+
+/// <summary>
+///     JS bridge object injected into the WebView as <c>window.modforgeBridge</c>. Commands
+///     arrive on a WebView binder thread and are only enqueued here; a single background
+///     worker executes them serially (never on the entry thread) and answers through the
+///     <c>window.__modforgeDispatch</c> sink with <c>{id, ok, payload}</c> frames. Host
+///     events travel through the same sink as <c>{event, payload}</c> frames.
+/// </summary>
+public sealed class ModForgeBridge : Java.Lang.Object
+{
+    public const string PickFileCommand = "android:pick_file";
+    public const string PickDirectoryCommand = "android:pick_dir";
+    public const string CreateDocumentCommand = "android:create_document";
+    public const string SetSystemBarsCommand = "android:set_system_bars";
+    public const string OpenInAppBrowserCommand = "android:open_in_app_browser";
+    public const string AiRequestCommand = "android:ai_request";
+    public const string SetDevServerCommand = "android:set_dev_server";
+
+    /// <summary>Single bridge instance; services use it to push event frames.</summary>
+    public static ModForgeBridge? Instance { get; private set; }
+
+    readonly LauncherActivity _activity;
+    readonly LauncherCommandServices _services;
+    readonly BlockingCollection<PendingCommand> _queue = new();
+
+    readonly record struct PendingCommand(string Command, string ArgsJson, string CallbackId);
+
+    public ModForgeBridge(LauncherActivity activity)
+    {
+        _activity = activity;
+        _services = LauncherCommandServices.Loaded;
+        Instance = this;
+        _ = Task.Run(ProcessLoopAsync);
+    }
+
+    [JavascriptInterface]
+    [Java.Interop.Export("invokeCommand")]
+    public void InvokeCommand(string command, string argsJson, string callbackId)
+    {
+        //Entry point only enqueues; blocking IO/network happen on the worker.
+        _queue.TryAdd(new PendingCommand(command ?? string.Empty, argsJson ?? string.Empty, callbackId ?? string.Empty));
+    }
+
+    /// <summary>
+    ///     Front-end acknowledgement for an <c>android:back</c> event: the SPA closed its
+    ///     topmost overlay, so the activity must not move the task to the background.
+    /// </summary>
+    [JavascriptInterface]
+    [Java.Interop.Export("backHandled")]
+    public void BackHandled()
+    {
+        _activity.MarkBackHandled();
+    }
+
+    /// <summary>Pushes one host event frame to the front-end; callable from services.</summary>
+    public void DispatchEvent(string eventName, JsonNode payload)
+    {
+        _activity.DispatchEventToJs(eventName, payload.ToJsonString());
+    }
+
+    async Task ProcessLoopAsync()
+    {
+        foreach (var pending in _queue.GetConsumingEnumerable())
+        {
+            // Commands run concurrently: the front-end fans out its cold-start
+            // reads (settings, library scan, diagnostics, update checks) and a
+            // single serial worker made every cheap read wait behind slow Nexus
+            // network calls — the library stayed empty for seconds after launch.
+            // Ordering is owned by the front-end: chains that depend on a prior
+            // command await its frame before sending the next one.
+            _ = Task.Run(() => ExecuteOneAsync(pending));
+        }
+    }
+
+    async Task ExecuteOneAsync(PendingCommand pending)
+    {
+        JsonObject frame;
+        try
+        {
+            var payload = await InvokeAsync(pending).ConfigureAwait(false);
+            frame = BuildFrame(pending.CallbackId, true, payload);
+        }
+        catch (LauncherCommandUnavailableException ex)
+        {
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+        catch (LauncherCommandException ex)
+        {
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("ModForgeBridge: command '" + pending.Command + "' failed: " + ex);
+            frame = ErrorFrame(pending.CallbackId, ex.Message);
+        }
+
+        DispatchFrame(frame);
+    }
+
+    async Task<JsonNode?> InvokeAsync(PendingCommand pending)
+    {
+        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(pending.ArgsJson) ? "{}" : pending.ArgsJson);
+        var args = document.RootElement.Clone();
+        switch (pending.Command)
+        {
+            case PickFileCommand:
+                return await PickFileAsync(args).ConfigureAwait(false);
+            case PickDirectoryCommand:
+                return await PickDirectoryAsync(args).ConfigureAwait(false);
+            case CreateDocumentCommand:
+                return await CreateDocumentAsync(args).ConfigureAwait(false);
+            case SetSystemBarsCommand:
+                return SetSystemBars(args);
+            case OpenInAppBrowserCommand:
+                return OpenInAppBrowser(args);
+            case SetDevServerCommand:
+                return SetDevServer(args);
+            case AiRequestCommand:
+                return await AiRequestAsync(args).ConfigureAwait(false);
+            default:
+                if (BootstrapCommands.Handles(pending.Command))
+                    return await BootstrapCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
+                if (AiCommands.Handles(pending.Command))
+                    return await AiCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
+                if (MachineTranslationCommands.Handles(pending.Command))
+                    return await MachineTranslationCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
+                if (LocalizationSettingsCommands.Handles(pending.Command))
+                    return await LocalizationSettingsCommands.HandleAsync(pending.Command, args).ConfigureAwait(false);
+
+                return await DispatchLauncherCommandAsync(pending.Command, args).ConfigureAwait(false);
+        }
+    }
+
+    async Task<JsonNode?> DispatchLauncherCommandAsync(string command, JsonElement args)
+    {
+        var result = await LauncherBridgeGenerated.DispatchAsync(command, args, _services).ConfigureAwait(false);
+        if (result is null)
+            return null;
+
+        if (result is JsonElement element)
+            return JsonNode.Parse(element.GetRawText());
+
+        throw new LauncherCommandException("bad_result_type", $"Launcher command '{command}' returned an unexpected payload type.");
+    }
+
+    async Task<JsonNode?> PickFileAsync(JsonElement args)
+    {
+        var multiple = args.TryGetProperty("multiple", out var multipleElement) && multipleElement.ValueKind == JsonValueKind.True;
+        var uris = await _activity.PickFilesAsync(multiple).ConfigureAwait(false);
+        if (uris is null)
+            return null;
+
+        var paths = new JsonArray();
+        foreach (var uri in uris)
+            paths.Add(await CopyToSandboxAsync(uri).ConfigureAwait(false));
+
+        if (multiple)
+            return paths;
+
+        return paths.Count > 0 ? paths[0] : null;
+    }
+
+    async Task<JsonNode?> PickDirectoryAsync(JsonElement args)
+    {
+        var uri = await _activity.PickDirectoryAsync().ConfigureAwait(false);
+        //SAF tree URIs are not filesystem paths; the front-end only needs a stable handle.
+        return uri?.ToString();
+    }
+
+    async Task<JsonNode?> CreateDocumentAsync(JsonElement args)
+    {
+        var defaultPath = args.TryGetProperty("defaultPath", out var defaultPathElement) && defaultPathElement.ValueKind == JsonValueKind.String
+            ? defaultPathElement.GetString()
+            : null;
+        var mimeType = ResolveMimeType(args);
+        var uri = await _activity.CreateDocumentAsync(mimeType, string.IsNullOrWhiteSpace(defaultPath) ? "export.bin" : defaultPath!).ConfigureAwait(false);
+        return uri?.ToString();
+    }
+
+    JsonNode? SetSystemBars(JsonElement args)
+    {
+        var hex = args.TryGetProperty("hex", out var hexElement) ? hexElement.GetString() : null;
+        var lightBars = !args.TryGetProperty("lightBars", out var lightElement) || lightElement.ValueKind != JsonValueKind.False;
+        if (!string.IsNullOrWhiteSpace(hex))
+            _activity.SetSystemBars(hex!, lightBars);
+        return null;
+    }
+
+    JsonNode? OpenInAppBrowser(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "open_in_app_browser requires an absolute http(s) URL.");
+        if (!_activity.OpenInAppBrowser(url!))
+            throw new LauncherCommandException("unavailable", "The in-app browser is not ready yet.");
+        return null;
+    }
+
+    /// <summary>
+    ///     Debug override: points the launcher WebView at a Vite dev-server URL so
+    ///     front-end edits hot-reload without rebuilding the APK; null restores the
+    ///     bundled assets. The activity recreates itself, so the next page load
+    ///     already uses the new source.
+    /// </summary>
+    JsonNode? SetDevServer(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String
+            ? urlElement.GetString()?.Trim()
+            : null;
+        if (!string.IsNullOrWhiteSpace(url)
+            && !(Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                && (parsed.Scheme == "http" || parsed.Scheme == "https")))
+            throw new LauncherCommandException("invalid_args", "set_dev_server requires an absolute http(s) URL or null.");
+
+        LauncherRuntimeService.SetDevServerPreference(string.IsNullOrWhiteSpace(url) ? null : url);
+        //Recreate on the UI thread so SetupWebView reloads against the new source; the
+        //response frame may race the teardown, which the front-end treats as a reload.
+        _activity.RunOnUiThread(() => _activity.Recreate());
+        return null;
+    }
+
+    /// <summary>
+    ///     Authenticated HTTP proxy for the front-end's self-contained AI calls
+    ///     (e.g. game-log error analysis). Callers either pass explicit headers or
+    ///     a saved workbench AI profileId, in which case the bridge attaches the
+    ///     stored credential server-side so keys never reach JavaScript. Only
+    ///     http(s) GET/POST are allowed and responses are capped at 1 MB.
+    /// </summary>
+    async Task<JsonNode?> AiRequestAsync(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url)
+            || !(url!.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)))
+            throw new LauncherCommandException("invalid_args", "ai_request requires an absolute http(s) URL.");
+        var method = args.TryGetProperty("method", out var methodElement) ? methodElement.GetString() : null;
+        var useGet = string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase);
+        var usePost = !useGet && string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase);
+        if (!useGet && !usePost)
+            throw new LauncherCommandException("invalid_args", "ai_request only supports GET and POST.");
+
+        using var request = new System.Net.Http.HttpRequestMessage(
+            usePost ? System.Net.Http.HttpMethod.Post : System.Net.Http.HttpMethod.Get,
+            url);
+        if (args.TryGetProperty("headers", out var headers) && headers.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var header in headers.EnumerateObject())
+            {
+                var value = header.Value.ValueKind == JsonValueKind.String ? header.Value.GetString() : null;
+                if (!string.IsNullOrEmpty(value))
+                    request.Headers.TryAddWithoutValidation(header.Name, value);
+            }
+        }
+
+        //A saved profile id resolves the credential on the native side; explicit
+        //caller headers win so custom auth stays possible.
+        var profileId = args.TryGetProperty("profileId", out var profileIdElement) && profileIdElement.ValueKind == JsonValueKind.String
+            ? profileIdElement.GetString()
+            : null;
+        if (!string.IsNullOrWhiteSpace(profileId) && !request.Headers.Contains("authorization") && !request.Headers.Contains("x-api-key"))
+        {
+            var profile = AiCommands.FindProfileWithKey(profileId!)
+                ?? throw new LauncherCommandException("not_found", $"AI profile '{profileId}' was not found or has no API key.");
+            var protocol = profile["protocol"]?.GetValue<string>() ?? string.Empty;
+            var apiKey = profile["apiKey"]?.GetValue<string>() ?? string.Empty;
+            if (protocol == "anthropic-messages")
+            {
+                request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            }
+            else
+            {
+                request.Headers.TryAddWithoutValidation("authorization", $"Bearer {apiKey}");
+            }
+        }
+
+        var body = args.TryGetProperty("body", out var bodyElement) && bodyElement.ValueKind == JsonValueKind.String
+            ? bodyElement.GetString()
+            : null;
+        if (usePost)
+            request.Content = new System.Net.Http.StringContent(body ?? string.Empty, Encoding.UTF8, "application/json");
+
+        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        using var response = await client.SendAsync(request).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        const int maxResponseChars = 1_000_000;
+        if (responseText.Length > maxResponseChars)
+            responseText = responseText.Substring(0, maxResponseChars);
+
+        return new JsonObject
+        {
+            ["statusCode"] = (int)response.StatusCode,
+            ["body"] = responseText,
+        };
+    }
+
+    async Task<string> CopyToSandboxAsync(Android.Net.Uri uri)
+    {
+        var displayName = QueryDisplayName(uri) ?? uri.LastPathSegment;
+        return await Task.Run(() => SandboxFileTool.CopyPickedFileToSandbox(uri, displayName)).ConfigureAwait(false);
+    }
+
+    static string? QueryDisplayName(Android.Net.Uri uri)
+    {
+        try
+        {
+            var cursor = Application.Context.ContentResolver?.Query(uri, new[] { Android.Provider.OpenableColumns.DisplayName }, null, null, null);
+            using (cursor)
+            {
+                if (cursor?.MoveToFirst() == true)
+                {
+                    var index = cursor.GetColumnIndex(Android.Provider.OpenableColumns.DisplayName);
+                    if (index >= 0)
+                        return cursor.GetString(index);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            //Cosmetic fallback: the sandbox copy derives its own name when the query fails.
+        }
+
+        return null;
+    }
+
+    static string ResolveMimeType(JsonElement args)
+    {
+        if (args.TryGetProperty("filters", out var filters) && filters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var filter in filters.EnumerateArray())
+            {
+                if (filter.TryGetProperty("extensions", out var extensions) && extensions.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var extensionValue in extensions.EnumerateArray())
+                    {
+                        var extension = extensionValue.GetString()?.TrimStart('.').ToLowerInvariant();
+                        var mime = extension is null || extension.Length == 0
+                            ? null
+                            : MimeTypeMap.Singleton?.GetMimeTypeFromExtension(extension);
+                        if (mime is not null)
+                            return mime;
+                    }
+                }
+            }
+        }
+
+        return "application/octet-stream";
+    }
+
+    static JsonObject BuildFrame(string callbackId, bool ok, JsonNode? payload)
+    {
+        return new JsonObject
+        {
+            ["id"] = callbackId,
+            ["ok"] = ok,
+            ["payload"] = payload?.DeepClone(),
+        };
+    }
+
+    static JsonObject ErrorFrame(string callbackId, string message)
+    {
+        return new JsonObject
+        {
+            ["id"] = callbackId,
+            ["ok"] = false,
+            ["payload"] = message,
+        };
+    }
+
+    void DispatchFrame(JsonObject frame)
+    {
+        //System.Text.Json's default encoder escapes U+2028/2029, so the JSON text is safe as a JS object literal.
+        var json = frame.ToJsonString();
+        _activity.EvaluateJavaScript("window.__modforgeDispatch && window.__modforgeDispatch(" + json + ");");
+    }
+
+    /// <summary>Escapes one JS string literal; used for event names embedded into dispatch snippets.</summary>
+    internal static string QuoteJsString(string value)
+    {
+        var builder = new StringBuilder(value.Length + 2);
+        builder.Append('"');
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                case '\r':
+                    builder.Append("\\r");
+                    break;
+                case '\t':
+                    builder.Append("\\t");
+                    break;
+                default:
+                    if (character < 0x20)
+                        builder.Append("\\u").Append(((int)character).ToString("x4"));
+                    else
+                        builder.Append(character);
+                    break;
+            }
+        }
+
+        builder.Append('"');
+        return builder.ToString();
+    }
+}

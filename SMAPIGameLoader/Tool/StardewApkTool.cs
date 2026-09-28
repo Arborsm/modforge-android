@@ -53,7 +53,9 @@ internal static class StardewApkTool
             {
                 var version = CurrentPackageInfo.VersionName;
                 var splitApks = CurrentPackageInfo.ApplicationInfo?.SplitSourceDirs;
-                return splitApks?.Count == 2;
+                //Merged/standalone installs (e.g. sideloaded single APKs) keep every
+                //assembly and asset in the base APK, so there are no split sources.
+                return splitApks is null || splitApks.Count == 2;
             }
 
             //samsung
@@ -72,8 +74,13 @@ internal static class StardewApkTool
                 if (CurrentPackageInfo == null)
                     return null;
 
+                //Merged installs carry the assemblies in the base APK.
+                var splitApks = CurrentPackageInfo.ApplicationInfo?.SplitSourceDirs;
+                if (splitApks is null || splitApks.Count == 0)
+                    return BaseApkPath;
+
                 if (IsGameFromPlayStore)
-                    return CurrentPackageInfo.ApplicationInfo.SplitSourceDirs?.FirstOrDefault(path => path.Contains("split_config.arm64"));
+                    return splitApks.FirstOrDefault(path => path.Contains("split_config.arm64"));
 
                 // Samsung: assemblies are in the base APK
                 return BaseApkPath;
@@ -95,9 +102,14 @@ internal static class StardewApkTool
                 if (CurrentPackageInfo == null)
                     return null;
 
+                //Merged installs carry the content in the base APK.
+                var splitApks = CurrentPackageInfo.ApplicationInfo?.SplitSourceDirs;
+                if (splitApks is null || splitApks.Count == 0)
+                    return BaseApkPath;
+
                 //play store
                 if (IsGameFromPlayStore)
-                    return CurrentPackageInfo.ApplicationInfo.SplitSourceDirs?.First(path => path.Contains("split_content"));
+                    return splitApks.First(path => path.Contains("split_content"));
 
                 //samsung
                 return BaseApkPath;
@@ -120,7 +132,7 @@ internal static class StardewApkTool
             switch (CurrentPackageInfo.PackageName)
             {
                 case GamePlayStorePackageName:
-                    return new(1, 6, 15, 3);
+                    return new(1, 6, 15, 0);
                 case GameGalaxyStorePackageName:
                     return new(1, 6, 15, 3);
                 default:

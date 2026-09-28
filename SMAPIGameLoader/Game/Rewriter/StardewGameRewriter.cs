@@ -37,7 +37,13 @@ internal static class StardewGameRewriter
                 instance_FieldDef.FieldType = stardewModule.ImportReference(typeof(SMAPIActivity));
                 TaskTool.NewLine("changed field type MainActivity to SMAPIActivity");
             }
-        
+
+            //Widen non-public members that Harmony patch wrappers must touch. The wrapper
+            //dynamic methods re-emit the original bodies, and the stock Mono runtime (x86_64
+            //emulator, unpatched packs) rejects protected/private access from them, which
+            //crashes the game on boot. Public members are always accessible.
+            PromoteFieldToPublic(stardewModule, "StardewValley.Menus.MobileFarmChooser", "farmTypeButtonLookup");
+
             Console.WriteLine("done Rewrite assembly: " + assemblyDefinition.FullName);
         }
         catch (Exception ex)
@@ -45,5 +51,20 @@ internal static class StardewGameRewriter
             Console.WriteLine(ex);
             ErrorDialogTool.Show(ex);
         }
+    }
+
+    /// <summary>Promotes one field to public so Harmony-generated patch wrappers may access it
+    /// on runtimes that enforce visibility inside dynamic methods. Missing members are skipped
+    /// silently so game updates only lose the dependent patch, not the whole rewrite pass.</summary>
+    static void PromoteFieldToPublic(ModuleDefinition module, string typeFullName, string fieldName)
+    {
+        var typeDef = module.Types.FirstOrDefault(t => t.FullName == typeFullName);
+        var fieldDef = typeDef?.Fields.FirstOrDefault(f => f.Name == fieldName);
+        if (fieldDef is null || fieldDef.IsPublic)
+            return;
+
+        fieldDef.Attributes &= ~Mono.Cecil.FieldAttributes.FieldAccessMask;
+        fieldDef.Attributes |= Mono.Cecil.FieldAttributes.Public;
+        TaskTool.NewLine($"promoted field to public: {typeFullName}::{fieldName}");
     }
 }
