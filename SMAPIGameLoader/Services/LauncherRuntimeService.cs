@@ -256,11 +256,25 @@ public sealed class LauncherRuntimeService
         WriteSettings(settings);
     }
 
+    /// <summary>
+    ///     Persists the WebView dev-server override in the settings file; null restores the
+    ///     bundled asset host. Saved through the same merge path as
+    ///     <see cref="SaveSettings" /> (load-modify-write), so a later
+    ///     save_launcher_settings call keeps this field untouched.
+    /// </summary>
+    public static void SetDevServerPreference(string? devServerUrl)
+    {
+        var settings = LoadOrCreateSettings();
+        settings.DevServerUrl = devServerUrl;
+        WriteSettings(settings);
+    }
+
     static LauncherSettings NormalizeSettings(LauncherSettings settings)
     {
         settings.GamePath = NormalizeOptionalPath(settings.GamePath);
         settings.ModsPath = NormalizeOptionalPath(settings.ModsPath);
         settings.NexusApiKey = string.IsNullOrWhiteSpace(settings.NexusApiKey) ? null : settings.NexusApiKey!.Trim();
+        settings.DevServerUrl = NormalizeDevServerUrl(settings.DevServerUrl);
 
         //Android defaults: the sandbox Mods dir and the SAF import folder.
         if (settings.ModsPath is null)
@@ -278,6 +292,22 @@ public sealed class LauncherRuntimeService
             return null;
 
         return value.Trim().Trim('"');
+    }
+
+    /// <summary>
+    ///     Keeps only absolute http(s) dev-server URLs; anything else (including values
+    ///     hand-edited into settings.json) falls back to the bundled asset host.
+    /// </summary>
+    static string? NormalizeDevServerUrl(string? value)
+    {
+        var trimmed = NormalizeOptionalPath(value);
+        if (trimmed is null)
+            return null;
+
+        return System.Uri.TryCreate(trimmed, System.UriKind.Absolute, out var parsed)
+            && (parsed.Scheme == "http" || parsed.Scheme == "https")
+            ? trimmed
+            : null;
     }
 
     static void WriteSettings(LauncherSettings settings)

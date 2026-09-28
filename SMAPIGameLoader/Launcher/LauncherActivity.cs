@@ -4,6 +4,7 @@ using Android.OS;
 using Android.Webkit;
 using AndroidX.WebKit;
 using SMAPIGameLoader.Bridge;
+using SMAPIGameLoader.Services;
 using SMAPIGameLoader.Tool;
 using System;
 using System.Collections.Generic;
@@ -110,8 +111,14 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         settings.JavaScriptEnabled = true;
         settings.DomStorageEnabled = true;
         settings.AllowFileAccess = false;
-        settings.CacheMode = CacheModes.Default;
-        _webView.SetWebViewClient(new AssetLoaderWebViewClient(_assetLoader, this));
+
+        //Debug override: a saved dev-server URL loads the front-end from Vite instead of
+        //the bundled assets. The asset loader stays registered — it only intercepts its
+        //own domain, so absolute appassets sub-resource URLs (local-file, plugins) keep
+        //resolving from the APK and sandbox while the document itself comes from the net.
+        var devServerUrl = ResolveDevServerUrl();
+        settings.CacheMode = devServerUrl is null ? CacheModes.Default : CacheModes.NoCache;
+        _webView.SetWebViewClient(new AssetLoaderWebViewClient(_assetLoader, this, devServerUrl));
         _bridge = new ModForgeBridge(this);
         _webView.AddJavascriptInterface(_bridge, "modforgeBridge");
 
@@ -137,7 +144,24 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
         rootLayout.AddView(_webView);
         SetContentView(rootLayout);
         AndroidX.Core.View.ViewCompat.SetOnApplyWindowInsetsListener(rootLayout, new SystemBarInsetsListener(this));
-        _webView.LoadUrl(AssetHostOrigin + "/index.html");
+        _webView.LoadUrl(devServerUrl ?? AssetHostOrigin + "/index.html");
+    }
+
+    /// <summary>
+    ///     Reads the persisted dev-server override before the first LoadUrl; an unreadable
+    ///     settings file must not block the bundled asset host from booting.
+    /// </summary>
+    string? ResolveDevServerUrl()
+    {
+        try
+        {
+            return LauncherRuntimeService.LoadOrCreateSettings().DevServerUrl;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("LauncherActivity: dev-server setting load failed: " + ex.Message);
+            return null;
+        }
     }
 
     sealed class SystemBarInsetsListener : Java.Lang.Object, AndroidX.Core.View.IOnApplyWindowInsetsListener
@@ -531,11 +555,13 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
     {
         readonly WebViewAssetLoader _assetLoader;
         readonly LauncherActivity _activity;
+        readonly string? _devServerUrl;
 
-        public AssetLoaderWebViewClient(WebViewAssetLoader assetLoader, LauncherActivity activity)
+        public AssetLoaderWebViewClient(WebViewAssetLoader assetLoader, LauncherActivity activity, string? devServerUrl)
         {
             _assetLoader = assetLoader;
             _activity = activity;
+            _devServerUrl = devServerUrl;
         }
 
         public override void OnPageFinished(WebView? view, string? url)
@@ -544,6 +570,62 @@ public class LauncherActivity : AndroidX.AppCompat.App.AppCompatActivity
             // The inset push from the insets listener can land before the page's
             // document exists; re-apply once each document is ready.
             _activity.PushAndroidSystemInsetToJs();
+        }
+
+        public override void OnReceivedError(WebView? view, IWebResourceRequest? request, WebResourceError? error)
+        {
+            base.OnReceivedError(view, request, error);
+            //Dev-server mode only: a dead main frame must not dead-end the launcher.
+            //Sub-resource misses (HMR socket reconnects, source maps) keep the page running.
+            if (_devServerUrl is null || request?.IsForMainFrame != true || view is null)
+                return;
+            if (!string.IsNullOrEmpty(view.Url) && view.Url!.StartsWith("data:", StringComparison.Ordinal))
+                return;
+
+            view.LoadDataWithBaseURL(
+                AssetHostOrigin + "/dev-server-unreachable.html",
+                BuildDevServerRecoveryHtml(_devServerUrl, error?.Description?.ToString()),
+                "text/html",
+                "utf-8",
+                null);
+        }
+
+        /// <summary>
+        ///     Inline recovery page shown when the dev-server main frame fails: explains the
+        ///     failure and offers retry plus the bridge-backed "clear and use built-in assets"
+        ///     escape hatch, so the launcher never bricks on an unreachable dev server.
+        /// </summary>
+        static string BuildDevServerRecoveryHtml(string devServerUrl, string? errorDetail)
+        {
+            var safeUrl = System.Net.WebUtility.HtmlEncode(devServerUrl);
+            var safeDetail = string.IsNullOrWhiteSpace(errorDetail) ? string.Empty : System.Net.WebUtility.HtmlEncode(errorDetail);
+            var urlJs = ModForgeBridge.QuoteJsString(devServerUrl);
+            return
+                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                + "<title>Dev server unreachable</title><style>"
+                + "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+                + "background:#f5f5f8;color:#1f2430;font-family:Roboto,'Segoe UI',sans-serif}"
+                + ".card{max-width:20rem;margin:1rem;padding:1.5rem;border-radius:1rem;background:#fff;"
+                + "box-shadow:0 0.5rem 1.5rem rgba(15,23,42,0.08);text-align:center}"
+                + "h1{font-size:1.05rem;margin:0 0 0.5rem}"
+                + "p{font-size:0.8rem;line-height:1.5;color:#5b6472;margin:0 0 0.4rem}"
+                + "code{font-size:0.72rem;color:#b3261e;word-break:break-all}"
+                + "button{margin-top:0.9rem;width:100%;padding:0.6rem 1rem;border:0;border-radius:0.6rem;"
+                + "font-size:0.85rem;background:#3b5bdb;color:#fff}"
+                + "button.ghost{background:#eceef3;color:#1f2430;margin-top:0.5rem}"
+                + "</style></head><body><div class=\"card\">"
+                + "<h1>Dev server unreachable</h1>"
+                + "<p>The launcher is loading its front-end from a Vite dev server that did not respond:</p>"
+                + "<code>" + safeUrl + "</code>"
+                + (safeDetail.Length > 0 ? "<p>" + safeDetail + "</p>" : string.Empty)
+                + "<button onclick=\"retry()\">Retry</button>"
+                + "<button class=\"ghost\" onclick=\"clearDevServer()\">Use built-in assets</button>"
+                + "</div><script>"
+                + "function retry(){location.href=" + urlJs + ";}"
+                + "function clearDevServer(){window.modforgeBridge && window.modforgeBridge.invokeCommand("
+                + "'android:set_dev_server', JSON.stringify({url:null}), 'dev-server-recovery');}"
+                + "</script></body></html>";
         }
 
         public override WebResourceResponse? ShouldInterceptRequest(WebView? view, IWebResourceRequest? request)

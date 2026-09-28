@@ -23,6 +23,13 @@ public sealed class LauncherSettings
 
     /// <summary>Android-side debug override for Nexus diagnostics; not part of the desktop contract.</summary>
     public bool ForceOffline { get; set; }
+
+    /// <summary>
+    ///     Android-side debug override: when set, the WebView loads the front-end from this
+    ///     Vite dev-server URL instead of the bundled assets; not part of the desktop contract.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DevServerUrl { get; set; }
 }
 
 /// <summary>Save request merge rules mirror the desktop protocol: absent/null means keep the current value.</summary>

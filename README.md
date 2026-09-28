@@ -20,6 +20,23 @@ ModForge 安卓启动器：在安卓手机上管理手机版《星露谷物语�
 - 上游 `docs/building.md` 所述定制 `libmonosgen-2.0.so` 需按其文档就位。
 - 仅支持 arm64 设备、正版游戏 ≥ 1.6.15.3。
 
+## 前端开发服务器（HMR）
+
+想跳过「build → 拷贝 `Assets/www` → 重装 APK」循环调试前端时，可以让 WebView 直接加载 ModForge Studio 仓库的 Vite dev server：
+
+1. 主仓库启动 dev server：`vp run web:dev --port 5175`（HMR WebSocket 默认 5176，即主端口 + 1）。`vp run` 不透传环境变量，必须走 `--port` 参数。
+2. 启动器设置页 →「开发服务器」卡片：
+   - 模拟器填 `http://10.0.2.2:5175`（`10.0.2.2` 是模拟器看到的宿主 loopback），点「启用」。
+   - 真机先在宿主机执行 `adb reverse tcp:5175 tcp:5175` 与 `adb reverse tcp:5176 tcp:5176`，然后填 `http://127.0.0.1:5175`。
+3. 保存后活动立即重建并从该地址加载；卡片点「停用」（或不可达恢复页点「Use built-in assets」）即回到内置资源。
+
+实现与边界：
+
+- 覆盖值持久化在 `settings.json` 的 `devServerUrl`（宿主专属调试字段，不进共享协议），bridge 命令 `android:set_dev_server`（`Bridge/ModForgeBridge.cs`），由设置页触发后 `LauncherActivity.Recreate()` 立即生效。
+- `Resources/xml/network_security_config.xml` 仅对 `10.0.2.2` / `127.0.0.1` / `localhost` 放行明文 HTTP，其余域保持禁明文——release 构建同样安全。
+- WebViewAssetLoader 保持注册：dev server 页面里绝对 `https://appassets.androidplatform.net/local-file/...`、`/plugins/...` 子资源仍从 APK 资产与沙箱伺服。
+- dev server 主框架加载失败时，`AssetLoaderWebViewClient` 会加载内联恢复页（重试 / 清除并回内置资源），不留死胡同。
+
 ---
 
 # SMAPI Launcher (upstream)

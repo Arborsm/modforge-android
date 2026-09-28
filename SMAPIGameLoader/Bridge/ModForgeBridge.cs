@@ -28,6 +28,7 @@ public sealed class ModForgeBridge : Java.Lang.Object
     public const string SetSystemBarsCommand = "android:set_system_bars";
     public const string OpenInAppBrowserCommand = "android:open_in_app_browser";
     public const string AiRequestCommand = "android:ai_request";
+    public const string SetDevServerCommand = "android:set_dev_server";
 
     /// <summary>Single bridge instance; services use it to push event frames.</summary>
     public static ModForgeBridge? Instance { get; private set; }
@@ -126,6 +127,8 @@ public sealed class ModForgeBridge : Java.Lang.Object
                 return SetSystemBars(args);
             case OpenInAppBrowserCommand:
                 return OpenInAppBrowser(args);
+            case SetDevServerCommand:
+                return SetDevServer(args);
             case AiRequestCommand:
                 return await AiRequestAsync(args).ConfigureAwait(false);
             default:
@@ -208,6 +211,29 @@ public sealed class ModForgeBridge : Java.Lang.Object
             throw new LauncherCommandException("invalid_args", "open_in_app_browser requires an absolute http(s) URL.");
         if (!_activity.OpenInAppBrowser(url!))
             throw new LauncherCommandException("unavailable", "The in-app browser is not ready yet.");
+        return null;
+    }
+
+    /// <summary>
+    ///     Debug override: points the launcher WebView at a Vite dev-server URL so
+    ///     front-end edits hot-reload without rebuilding the APK; null restores the
+    ///     bundled assets. The activity recreates itself, so the next page load
+    ///     already uses the new source.
+    /// </summary>
+    JsonNode? SetDevServer(JsonElement args)
+    {
+        var url = args.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String
+            ? urlElement.GetString()?.Trim()
+            : null;
+        if (!string.IsNullOrWhiteSpace(url)
+            && !(Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                && (parsed.Scheme == "http" || parsed.Scheme == "https")))
+            throw new LauncherCommandException("invalid_args", "set_dev_server requires an absolute http(s) URL or null.");
+
+        LauncherRuntimeService.SetDevServerPreference(string.IsNullOrWhiteSpace(url) ? null : url);
+        //Recreate on the UI thread so SetupWebView reloads against the new source; the
+        //response frame may race the teardown, which the front-end treats as a reload.
+        _activity.RunOnUiThread(() => _activity.Recreate());
         return null;
     }
 
